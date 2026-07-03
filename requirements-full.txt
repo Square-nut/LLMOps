@@ -1,9 +1,13 @@
 # 实现业务功能时再安装（见 LEARNING.md 各 Phase）
 -r requirements.txt
+# cryptography>=49 在 Python 3.9/macOS 上无 wheel，会触发 Rust+OpenSSL 源码编译
+cryptography>=42.0.0,<49.0.0
 litellm>=1.55.0
-llama-index-core>=0.12.0
-llama-index-embeddings-openai>=0.3.0
-llama-index-vector-stores-faiss>=0.3.0
+# llama-index>=0.14 依赖 banks>=2.4，需 Python 3.10+；banks 2.4+ 同理
+llama-index-core>=0.12.0,<0.13.0
+llama-index-embeddings-openai>=0.3.0,<0.4.0
+llama-index-vector-stores-faiss>=0.3.0,<0.4.0
+banks>=2.2.0,<2.4.0
 faiss-cpu>=1.9.0
 supabase>=2.10.0
 httpx>=0.28.0
