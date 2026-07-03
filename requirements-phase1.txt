@@ -1,0 +1,3 @@
+# Phase 1 只需 Chat + LiteLLM，避免一次性装 RAG/Supabase 的编译依赖
+-r requirements.txt
+litellm>=1.55.0

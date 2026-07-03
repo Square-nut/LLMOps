@@ -40,3 +40,14 @@ __screenshots__/
 
 test-results/
 playwright-report/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+data/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/

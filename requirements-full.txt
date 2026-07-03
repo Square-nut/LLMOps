@@ -1,0 +1,9 @@
+# 实现业务功能时再安装（见 LEARNING.md 各 Phase）
+-r requirements.txt
+litellm>=1.55.0
+llama-index-core>=0.12.0
+llama-index-embeddings-openai>=0.3.0
+llama-index-vector-stores-faiss>=0.3.0
+faiss-cpu>=1.9.0
+supabase>=2.10.0
+httpx>=0.28.0
