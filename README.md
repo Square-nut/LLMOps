@@ -1,32 +1,50 @@
 # LLMOps
 
-Minimal LLM + RAG application skeleton (FastAPI backend + Vue frontend).
+Minimal LLM + RAG application (FastAPI backend + Vue frontend).
 
 - 架构说明：[ARCHITECTURE.md](./ARCHITECTURE.md)
-- **学习 / 实现指南：[LEARNING.md](./LEARNING.md)** ← 从这里开始
+- 学习指南：[LEARNING.md](./LEARNING.md)
 
-## 当前状态
-
-**仅基础框架**：目录分层、路由、配置已就绪；业务逻辑为占位（调用返回 HTTP 501）。
-
-## 快速启动（框架）
+## 快速启动（本地开发）
 
 ```sh
 python -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements-full.txt
+cp .env.example .env   # 填入 GEEKAI_API_KEY
+```
+
+### 1. 启动本地数据库（Docker，数据在外置硬盘 ./data/）
+
+```sh
+docker compose up postgres -d
+```
+
+首次启动会自动执行 `supabase/schema.sql` 建表。数据目录：`./data/postgres/`。
+
+### 2. 启动 API
+
+```sh
 uvicorn app.main:app --reload --port 8000
 ```
 
-- 健康检查：`GET /health`
+- 健康检查：`GET /health`（`database: true` 表示已连上 Postgres）
 - API 文档：`http://localhost:8000/docs`
-- 实现业务时按 Phase 安装：`requirements-phase1.txt` → Phase 2/3 再 `requirements-full.txt`
 
-## Docker
+### 一键 Docker（API + Postgres）
 
 ```sh
 docker compose up --build
 ```
+
+## 数据存储位置（外置硬盘）
+
+| 路径 | 内容 |
+|------|------|
+| `./data/postgres/` | PostgreSQL 数据 |
+| `./data/faiss_index/` | RAG 向量索引 |
+
+均在 `.gitignore` 中，不会进 Git。
 
 ## Frontend (Vue 3)
 
