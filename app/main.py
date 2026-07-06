@@ -39,5 +39,5 @@ async def health():
     return {
         "status": "ok",
         "env": settings.app_env,
-        "framework_only": True,
+        "database": settings.database_enabled,
     }

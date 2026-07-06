@@ -17,8 +17,7 @@ class Settings(BaseSettings):
     geekai_api_key: str = ""
     geekai_base_url: str = "https://geekai.co/api/v1"
 
-    supabase_url: str = ""
-    supabase_key: str = ""
+    database_url: str = ""
 
     faiss_index_path: str = "./data/faiss_index"
     embedding_model: str = "text-embedding-3-small"
@@ -34,8 +33,8 @@ class Settings(BaseSettings):
     fallback_model: str = "bytedance-asset-v1"
 
     @property
-    def supabase_enabled(self) -> bool:
-        return bool(self.supabase_url and self.supabase_key)
+    def database_enabled(self) -> bool:
+        return bool(self.database_url)
 
 
 settings = Settings()
