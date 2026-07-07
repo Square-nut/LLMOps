@@ -31,8 +31,33 @@ class TaskType(str, Enum):
 
 
 def select_model(task_type: TaskType = TaskType.SIMPLE, context_length: int = 0) -> str:
-    """根据任务类型选择模型。TODO: Phase 4 实现。"""
-    raise NotImplementedError("Phase 4: 在 llm_gateway.select_model 中实现模型路由")
+    """根据任务类型与上下文长度选择模型。"""
+    if task_type == TaskType.REASONING:
+        return settings.reasoning_model
+    if task_type == TaskType.LONG_CONTEXT or context_length > 8000:
+        return settings.long_context_model
+    return settings.default_model
+
+
+def _estimate_context_length(
+    user_message: str,
+    system_prompt: Optional[str] = None,
+    context: Optional[str] = None,
+) -> int:
+    total = len(user_message)
+    if system_prompt:
+        total += len(system_prompt)
+    if context:
+        total += len(context)
+    return total
+
+
+def _create_completion(model: str, messages: list[dict[str, str]]):
+    return get_client().chat.completions.create(
+        model=model,
+        messages=messages,
+        stream=False,
+    )
 
 
 def _build_messages(
@@ -63,19 +88,26 @@ def completion(
     task_type: TaskType = TaskType.SIMPLE,
     model: Optional[str] = None,
 ) -> Dict[str, Any]:
-    selected_model = model or settings.default_model
+    context_length = _estimate_context_length(user_message, system_prompt, context)
+    selected_model = model or select_model(task_type, context_length=context_length)
     messages = _build_messages(user_message, system_prompt, context)
 
     start = time.perf_counter()
     try:
-        response = get_client().chat.completions.create(
-            model=selected_model,
-            messages=messages,
-            stream=False,
-        )
+        response = _create_completion(selected_model, messages)
     except Exception as exc:
-        logger.error("LLM completion failed model=%s: %s", selected_model, exc)
-        raise
+        fallback = settings.fallback_model
+        if selected_model == fallback:
+            logger.error("LLM completion failed model=%s: %s", selected_model, exc)
+            raise
+        logger.warning(
+            "LLM completion failed model=%s, retrying fallback=%s: %s",
+            selected_model,
+            fallback,
+            exc,
+        )
+        selected_model = fallback
+        response = _create_completion(selected_model, messages)
 
     latency_ms = int((time.perf_counter() - start) * 1000)
     content = response.choices[0].message.content or ""

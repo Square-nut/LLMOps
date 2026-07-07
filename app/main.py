@@ -3,14 +3,17 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import chat, ingest
+from app.api import chat, ingest, logs
 from app.core.config import settings
 from app.core.logger import logger
+from app.db import postgres as db
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting LLMOps API (env=%s)", settings.app_env)
+    if settings.database_enabled:
+        db.ensure_schema()
     yield
     logger.info("Shutting down LLMOps API")
 
@@ -32,6 +35,7 @@ app.add_middleware(
 
 app.include_router(chat.router, prefix="/api", tags=["chat"])
 app.include_router(ingest.router, prefix="/api", tags=["ingest"])
+app.include_router(logs.router, prefix="/api", tags=["logs"])
 
 
 @app.get("/health")
