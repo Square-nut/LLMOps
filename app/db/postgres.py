@@ -202,6 +202,65 @@ def list_ingest_logs(*, limit: int = 50) -> List[Dict[str, Any]]:
         conn.close()
 
 
+def list_all_documents() -> List[Dict[str, Any]]:
+    conn = _get_connection()
+    if conn is None:
+        return []
+
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, content, source, created_at
+                FROM documents
+                ORDER BY created_at ASC
+                """
+            )
+            rows = cur.fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+def delete_chunks_for_document(*, document_id: str) -> None:
+    conn = _get_connection()
+    if conn is None:
+        return
+
+    try:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM chunks WHERE document_id = %s", (document_id,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_chunk_version_stats() -> Dict[str, Any]:
+    conn = _get_connection()
+    if conn is None:
+        return {"total": 0, "versions": {}}
+
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*)::int AS total FROM chunks")
+            total_row = cur.fetchone() or {"total": 0}
+
+            cur.execute(
+                """
+                SELECT embedding_version, COUNT(*)::int AS count
+                FROM chunks
+                GROUP BY embedding_version
+                ORDER BY count DESC
+                """
+            )
+            version_rows = cur.fetchall()
+
+        versions = {row["embedding_version"]: row["count"] for row in version_rows}
+        return {"total": total_row["total"], "versions": versions}
+    finally:
+        conn.close()
+
+
 def get_usage_summary() -> Dict[str, Any]:
     conn = _get_connection()
     if conn is None:

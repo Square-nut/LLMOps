@@ -3,6 +3,7 @@ from typing import Optional
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
+from app.core.online_api import OnlineApiDisabledError
 from app.services import ingest_service
 
 router = APIRouter()
@@ -26,6 +27,8 @@ async def ingest_text(body: IngestTextRequest) -> IngestResponse:
         result = await ingest_service.ingest_text(body.content, source=body.source)
     except NotImplementedError as exc:
         raise HTTPException(status_code=501, detail=str(exc)) from exc
+    except OnlineApiDisabledError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     return IngestResponse(**result)
 
 
@@ -41,4 +44,6 @@ async def ingest_file(
         result = await ingest_service.ingest_text(content, source=file_source)
     except NotImplementedError as exc:
         raise HTTPException(status_code=501, detail=str(exc)) from exc
+    except OnlineApiDisabledError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     return IngestResponse(**result)

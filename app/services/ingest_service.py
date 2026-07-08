@@ -16,12 +16,12 @@ async def ingest_text(content: str, source: str = "upload") -> dict:
         db.save_chunks(
             document_id=document_id,
             chunks=chunk_texts,
-            embedding_version=settings.embedding_version,
+            embedding_version=settings.effective_embedding_version,
         )
 
     return {
         "document_id": document_id,
         "source": source,
         "chunks_indexed": indexed_count,
-        "embedding_version": settings.embedding_version,
+        "embedding_version": settings.effective_embedding_version,
     }

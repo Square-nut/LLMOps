@@ -31,6 +31,44 @@ export interface HealthResponse {
   status: string
   env: string
   database: boolean
+  allow_online_api: boolean
+}
+
+export interface RagStatusResponse {
+  status: 'ok' | 'needs_reindex' | 'empty'
+  warnings: string[]
+  chat_model: string
+  embedding: {
+    provider: string
+    model: string
+    version: string
+    dim: number
+    device: string
+    ready: boolean
+  }
+  index: {
+    exists: boolean
+    path: string
+    vector_count: number
+    stored_embedding_model: string | null
+    stored_embedding_provider: string | null
+    stored_embedding_version: string | null
+    stored_dim: number | null
+    updated_at: string | null
+  }
+  database: {
+    enabled: boolean
+    document_count: number
+    chunk_count: number
+    chunk_versions: Record<string, number>
+  }
+}
+
+export interface ReindexResponse {
+  documents_processed: number
+  chunks_indexed: number
+  vector_count: number
+  embedding_version: string
 }
 
 export interface UsageSummary {
@@ -102,4 +140,12 @@ export function postIngestText(body: IngestTextRequest) {
 
 export function getLogs(limit = 50) {
   return request<LogsResponse>(`/api/logs?limit=${limit}`)
+}
+
+export function getRagStatus() {
+  return request<RagStatusResponse>('/api/rag/status')
+}
+
+export function postReindex() {
+  return request<ReindexResponse>('/api/rag/reindex', { method: 'POST' })
 }

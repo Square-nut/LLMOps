@@ -3,6 +3,7 @@ from typing import Dict, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from app.core.online_api import OnlineApiDisabledError
 from app.core.llm_gateway import TaskType
 from app.services import chat_service
 
@@ -35,4 +36,6 @@ async def chat_endpoint(body: ChatRequest) -> ChatResponse:
         )
     except NotImplementedError as exc:
         raise HTTPException(status_code=501, detail=str(exc)) from exc
+    except OnlineApiDisabledError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     return ChatResponse(**result)

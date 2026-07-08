@@ -5,6 +5,7 @@ from typing import Any, Dict, Optional
 from openai import OpenAI
 
 from app.core.config import settings
+from app.core.online_api import require_online_api
 from app.core.logger import logger
 
 _client: Optional[OpenAI] = None
@@ -88,6 +89,7 @@ def completion(
     task_type: TaskType = TaskType.SIMPLE,
     model: Optional[str] = None,
 ) -> Dict[str, Any]:
+    require_online_api("chat completion")
     context_length = _estimate_context_length(user_message, system_prompt, context)
     selected_model = model or select_model(task_type, context_length=context_length)
     messages = _build_messages(user_message, system_prompt, context)

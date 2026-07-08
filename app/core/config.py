@@ -16,12 +16,16 @@ class Settings(BaseSettings):
 
     geekai_api_key: str = ""
     geekai_base_url: str = "https://geekai.co/api/v1"
+    allow_online_api: bool = False
 
     database_url: str = ""
 
     faiss_index_path: str = "./data/faiss_index"
+    embedding_provider: str = "openai"
     embedding_model: str = "text-embedding-3-small"
-    embedding_version: str = "v1"
+    embedding_version: str = ""
+    embedding_dim: int = 1536
+    embedding_device: str = "cuda"
 
     chunk_size: int = 512
     chunk_overlap: int = 64
@@ -35,6 +39,10 @@ class Settings(BaseSettings):
     @property
     def database_enabled(self) -> bool:
         return bool(self.database_url)
+
+    @property
+    def effective_embedding_version(self) -> str:
+        return self.embedding_version or self.embedding_model
 
 
 settings = Settings()
