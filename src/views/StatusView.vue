@@ -25,7 +25,9 @@ function statusClass(status: string) {
 }
 
 function providerLabel(provider: string) {
-  return provider === 'local' ? '本地' : '云端'
+  if (provider === 'mock') return 'Mock（本地）'
+  if (provider === 'local') return '本地'
+  return '云端'
 }
 
 async function loadAll() {

@@ -5,6 +5,7 @@ from app.core.online_api import require_online_api
 from app.db import postgres as db
 from app.rag.chunker import chunk_text
 from app.rag import index as rag_index
+from app.rag.index import _uses_cloud_embedding
 
 
 def get_rag_status() -> Dict[str, Any]:
@@ -62,11 +63,14 @@ def get_rag_status() -> Dict[str, Any]:
     else:
         status = "ok"
 
-    if not settings.allow_online_api:
-        warnings.append("在线 API 已禁用（ALLOW_ONLINE_API=false），对话/入库/RAG 检索不会调用 GeekAI")
+    if settings.embedding_provider == "mock":
+        warnings.append("当前使用 mock embedding（本地伪向量），仅用于流程联调，检索语义不可靠")
+
+    if not settings.allow_online_api and settings.embedding_provider == "openai":
+        warnings.append("在线 API 已禁用（ALLOW_ONLINE_API=false），openai embedding / 对话不会调用 GeekAI")
 
     if settings.embedding_provider == "local":
-        warnings.append("本地 Embedding 尚未接入，当前请将 EMBEDDING_PROVIDER 设为 openai")
+        warnings.append("本地 Embedding 尚未接入，请使用 EMBEDDING_PROVIDER=mock 或 openai")
 
     return {
         "status": status,
@@ -78,9 +82,12 @@ def get_rag_status() -> Dict[str, Any]:
             "version": current_version,
             "dim": settings.embedding_dim,
             "device": settings.embedding_device if settings.embedding_provider == "local" else "cloud",
-            "ready": settings.allow_online_api
-            and settings.embedding_provider == "openai"
-            and bool(settings.geekai_api_key),
+            "ready": settings.embedding_provider == "mock"
+            or (
+                settings.allow_online_api
+                and settings.embedding_provider == "openai"
+                and bool(settings.geekai_api_key)
+            ),
         },
         "index": index_status,
         "database": {
@@ -93,7 +100,8 @@ def get_rag_status() -> Dict[str, Any]:
 
 
 def reindex_all() -> Dict[str, Any]:
-    require_online_api("reindex embedding")
+    if _uses_cloud_embedding():
+        require_online_api("reindex embedding")
     if not settings.database_enabled:
         raise ValueError("Database not configured, cannot reindex from stored documents")
 

@@ -12,15 +12,22 @@ from llama_index.vector_stores.faiss import FaissVectorStore
 from app.core.config import settings
 from app.core.logger import logger
 from app.core.online_api import require_online_api
+from app.rag.mock_embedding import MockEmbedding
 
 _index: Optional[VectorStoreIndex] = None
 _META_FILE = "meta.json"
 
 
-def _get_embed_model() -> OpenAIEmbedding:
+def _uses_cloud_embedding() -> bool:
+    return settings.embedding_provider == "openai"
+
+
+def _get_embed_model():
+    if settings.embedding_provider == "mock":
+        return MockEmbedding(embed_dim=settings.embedding_dim)
     if settings.embedding_provider == "local":
         raise NotImplementedError(
-            "Local embedding is not configured yet. Set EMBEDDING_PROVIDER=openai or implement HuggingFace embedding."
+            "Local embedding is not configured yet. Set EMBEDDING_PROVIDER=mock or openai."
         )
     return OpenAIEmbedding(
         model=settings.embedding_model,
@@ -171,7 +178,8 @@ def add_documents(documents: list[Document]) -> int:
     if not documents:
         return 0
 
-    require_online_api("document embedding")
+    if _uses_cloud_embedding():
+        require_online_api("document embedding")
     index = _load_or_create_index()
     for doc in documents:
         index.insert(doc)
