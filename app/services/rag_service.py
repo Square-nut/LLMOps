@@ -141,10 +141,19 @@ def reindex_all() -> Dict[str, Any]:
 
 
 def check_chat_model() -> Dict[str, Any]:
+    input_text = "请只回复 ok"
     result = completion(
-        "请只回复 ok",
+        input_text,
         system_prompt="你是系统状态检查助手。请只返回 ok。",
         use_mock=False,
+    )
+    db.log_chat(
+        user_id="system:model-check",
+        input_text=input_text,
+        output_text=result["content"],
+        model=result["model"],
+        tokens=result["tokens"],
+        latency_ms=result["latency_ms"],
     )
     return {
         "ok": True,
