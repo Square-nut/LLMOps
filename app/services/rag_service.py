@@ -1,6 +1,7 @@
 from typing import Any, Dict, List
 
 from app.core.config import settings
+from app.core.llm_gateway import completion
 from app.core.online_api import require_online_api
 from app.db import postgres as db
 from app.rag.chunker import chunk_text
@@ -136,4 +137,18 @@ def reindex_all() -> Dict[str, Any]:
         "chunks_indexed": chunks_indexed,
         "vector_count": final_status["vector_count"],
         "embedding_version": settings.effective_embedding_version,
+    }
+
+
+def check_chat_model() -> Dict[str, Any]:
+    result = completion(
+        "请只回复 ok",
+        system_prompt="你是系统状态检查助手。请只返回 ok。",
+        use_mock=False,
+    )
+    return {
+        "ok": True,
+        "model": result["model"],
+        "latency_ms": result["latency_ms"],
+        "reply": result["content"],
     }

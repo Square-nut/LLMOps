@@ -52,6 +52,13 @@ class ReindexResponse(BaseModel):
     embedding_version: str
 
 
+class ModelCheckResponse(BaseModel):
+    ok: bool
+    model: str
+    latency_ms: int
+    reply: str
+
+
 @router.get("/rag/status", response_model=RagStatusResponse)
 async def get_rag_status():
     return RagStatusResponse(**rag_service.get_rag_status())
@@ -70,3 +77,14 @@ async def reindex_rag():
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     return ReindexResponse(**result)
+
+
+@router.post("/rag/model-check", response_model=ModelCheckResponse)
+async def check_model():
+    try:
+        result = rag_service.check_chat_model()
+    except OnlineApiDisabledError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return ModelCheckResponse(**result)

@@ -71,6 +71,13 @@ export interface ReindexResponse {
   embedding_version: string
 }
 
+export interface ModelCheckResponse {
+  ok: boolean
+  model: string
+  latency_ms: number
+  reply: string
+}
+
 export interface UsageSummary {
   chat_count: number
   total_tokens: number
@@ -148,4 +155,8 @@ export function getRagStatus() {
 
 export function postReindex() {
   return request<ReindexResponse>('/api/rag/reindex', { method: 'POST' })
+}
+
+export function postModelCheck() {
+  return request<ModelCheckResponse>('/api/rag/model-check', { method: 'POST' })
 }

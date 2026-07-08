@@ -1,13 +1,23 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { getHealth, getRagStatus, postReindex, type HealthResponse, type RagStatusResponse } from '@/api/client'
+import { onMounted, ref } from 'vue'
+import {
+  getHealth,
+  getRagStatus,
+  postModelCheck,
+  postReindex,
+  type HealthResponse,
+  type ModelCheckResponse,
+  type RagStatusResponse,
+} from '@/api/client'
 
 const health = ref<HealthResponse | null>(null)
 const ragStatus = ref<RagStatusResponse | null>(null)
+const modelCheck = ref<ModelCheckResponse | null>(null)
 const error = ref('')
 const ragError = ref('')
+const modelCheckError = ref('')
 const loading = ref(false)
-const checked = ref(false)
+const modelChecking = ref(false)
 const reindexing = ref(false)
 const reindexMessage = ref('')
 
@@ -45,7 +55,19 @@ async function loadAll() {
     ragError.value = e instanceof Error ? e.message : '无法加载 RAG 状态'
   } finally {
     loading.value = false
-    checked.value = true
+  }
+}
+
+async function handleModelCheck() {
+  modelChecking.value = true
+  modelCheck.value = null
+  modelCheckError.value = ''
+  try {
+    modelCheck.value = await postModelCheck()
+  } catch (e) {
+    modelCheckError.value = e instanceof Error ? e.message : '模型检查失败'
+  } finally {
+    modelChecking.value = false
   }
 }
 
@@ -65,17 +87,17 @@ async function handleReindex() {
     reindexing.value = false
   }
 }
+
+onMounted(loadAll)
 </script>
 
 <template>
   <div class="panel">
     <div class="toolbar">
       <button type="button" class="refresh-btn" :disabled="loading || reindexing" @click="loadAll">
-        {{ loading ? '检查中…' : '检查状态' }}
+        {{ loading ? '刷新中…' : '刷新本地状态' }}
       </button>
     </div>
-
-    <p v-if="!checked && !loading" class="hint-top">状态检查不会调用在线 API，请点击「检查状态」手动触发。</p>
 
     <p v-if="error" class="error">{{ error }}</p>
 
@@ -105,7 +127,23 @@ async function handleReindex() {
       </div>
     </section>
 
-    <p v-if="loading && !checked" class="loading">检查中…</p>
+    <section class="section">
+      <div class="section-head">
+        <h2>在线模型检查</h2>
+        <span class="hint">该操作会真实调用一次 LLM</span>
+      </div>
+      <div class="actions">
+        <button type="button" class="model-check-btn" :disabled="modelChecking" @click="handleModelCheck">
+          {{ modelChecking ? '检查中…' : '手动测试模型' }}
+        </button>
+        <span v-if="modelCheck" class="success">
+          {{ modelCheck.model }} · {{ modelCheck.latency_ms }}ms · {{ modelCheck.reply }}
+        </span>
+      </div>
+      <p v-if="modelCheckError" class="error">{{ modelCheckError }}</p>
+    </section>
+
+    <p v-if="loading && !health && !ragStatus" class="loading">加载本地状态…</p>
     <p v-if="ragError" class="error">{{ ragError }}</p>
     <p v-if="reindexMessage" class="success">{{ reindexMessage }}</p>
 
@@ -225,7 +263,8 @@ async function handleReindex() {
 }
 
 .refresh-btn,
-.reindex-btn {
+.reindex-btn,
+.model-check-btn {
   padding: 0.5rem 1rem;
   border-radius: 0.5rem;
   border: 1px solid var(--border);
@@ -235,17 +274,24 @@ async function handleReindex() {
 }
 
 .refresh-btn:hover:not(:disabled),
-.reindex-btn:hover:not(:disabled) {
+.reindex-btn:hover:not(:disabled),
+.model-check-btn:hover:not(:disabled) {
   background: var(--assistant-bg);
 }
 
 .refresh-btn:disabled,
-.reindex-btn:disabled {
+.reindex-btn:disabled,
+.model-check-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
 .reindex-btn {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.model-check-btn {
   border-color: var(--accent);
   color: var(--accent);
 }

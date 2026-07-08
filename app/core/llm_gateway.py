@@ -88,7 +88,21 @@ def completion(
     context: Optional[str] = None,
     task_type: TaskType = TaskType.SIMPLE,
     model: Optional[str] = None,
+    use_mock: bool = True,
 ) -> Dict[str, Any]:
+    if (
+        use_mock
+        and settings.embedding_provider == "mock"
+        and settings.mock_chat_enabled
+        and user_message.strip() == settings.mock_rag_query.strip()
+    ):
+        return {
+            "content": settings.mock_chat_reply,
+            "model": "mock-chat",
+            "tokens": {"prompt": 0, "completion": 0, "total": 0},
+            "latency_ms": 0,
+        }
+
     require_online_api("chat completion")
     context_length = _estimate_context_length(user_message, system_prompt, context)
     selected_model = model or select_model(task_type, context_length=context_length)
