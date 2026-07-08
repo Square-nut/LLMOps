@@ -5,7 +5,7 @@ import { useChatStore } from '@/stores/chat'
 
 const chatStore = useChatStore()
 const input = ref('')
-const useRag = ref(true)
+const useRag = ref(false)
 const loading = ref(false)
 const error = ref('')
 const listRef = ref<HTMLElement | null>(null)
