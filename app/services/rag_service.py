@@ -7,6 +7,7 @@ from app.db import postgres as db
 from app.rag.chunker import chunk_text
 from app.rag import index as rag_index
 from app.rag.index import _uses_cloud_embedding
+from app.rag.local_embedding import local_embedding_config_ready, probe_local_embedding
 
 
 def get_rag_status() -> Dict[str, Any]:
@@ -71,7 +72,28 @@ def get_rag_status() -> Dict[str, Any]:
         warnings.append("在线 API 已禁用（ALLOW_ONLINE_API=false），openai embedding / 对话不会调用 GeekAI")
 
     if settings.embedding_provider == "local":
-        warnings.append("本地 Embedding 尚未接入，请使用 EMBEDDING_PROVIDER=mock 或 openai")
+        if settings.embedding_backend == "tei" and not settings.embedding_api_base.strip():
+            warnings.append(
+                "本地 Embedding 使用 TEI 远程模式，请配置 EMBEDDING_API_BASE（Win PC 服务地址）"
+            )
+        elif settings.embedding_backend == "huggingface":
+            warnings.append(
+                "本地 Embedding 使用 HuggingFace 进程内加载，需在本机安装 sentence-transformers 与 PyTorch"
+            )
+
+    embedding_device = "cloud"
+    if settings.embedding_provider == "local":
+        embedding_device = (
+            "remote" if settings.embedding_backend == "tei" else settings.embedding_device
+        )
+
+    embedding_ready = False
+    if settings.embedding_provider == "mock":
+        embedding_ready = True
+    elif settings.embedding_provider == "openai":
+        embedding_ready = settings.allow_online_api and bool(settings.geekai_api_key)
+    elif settings.embedding_provider == "local":
+        embedding_ready = local_embedding_config_ready()
 
     return {
         "status": status,
@@ -79,16 +101,13 @@ def get_rag_status() -> Dict[str, Any]:
         "chat_model": settings.default_model,
         "embedding": {
             "provider": settings.embedding_provider,
+            "backend": settings.embedding_backend if settings.embedding_provider == "local" else None,
             "model": settings.embedding_model,
             "version": current_version,
             "dim": settings.embedding_dim,
-            "device": settings.embedding_device if settings.embedding_provider == "local" else "cloud",
-            "ready": settings.embedding_provider == "mock"
-            or (
-                settings.allow_online_api
-                and settings.embedding_provider == "openai"
-                and bool(settings.geekai_api_key)
-            ),
+            "device": embedding_device,
+            "api_base": settings.embedding_api_base or None,
+            "ready": embedding_ready,
         },
         "index": index_status,
         "database": {
@@ -138,6 +157,32 @@ def reindex_all() -> Dict[str, Any]:
         "vector_count": final_status["vector_count"],
         "embedding_version": settings.effective_embedding_version,
     }
+
+
+def check_embedding() -> Dict[str, Any]:
+    if settings.embedding_provider == "openai":
+        require_online_api("embedding check")
+        from app.rag.index import _get_embed_model
+
+        embed_model = _get_embed_model()
+        sample = "embedding health check"
+        vector = embed_model._get_text_embedding(sample)
+        return {
+            "ok": True,
+            "backend": "openai",
+            "model": settings.embedding_model,
+            "dim": len(vector),
+            "device": "cloud",
+            "api_base": settings.geekai_base_url,
+            "sample": sample,
+        }
+
+    if settings.embedding_provider == "local":
+        return probe_local_embedding()
+
+    raise ValueError(
+        f"Embedding check is not supported for provider={settings.embedding_provider!r}"
+    )
 
 
 def check_chat_model() -> Dict[str, Any]:

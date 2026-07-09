@@ -3,8 +3,10 @@ import { onMounted, ref } from 'vue'
 import {
   getHealth,
   getRagStatus,
+  postEmbeddingCheck,
   postModelCheck,
   postReindex,
+  type EmbeddingCheckResponse,
   type HealthResponse,
   type ModelCheckResponse,
   type RagStatusResponse,
@@ -13,11 +15,14 @@ import {
 const health = ref<HealthResponse | null>(null)
 const ragStatus = ref<RagStatusResponse | null>(null)
 const modelCheck = ref<ModelCheckResponse | null>(null)
+const embeddingCheck = ref<EmbeddingCheckResponse | null>(null)
 const error = ref('')
 const ragError = ref('')
 const modelCheckError = ref('')
+const embeddingCheckError = ref('')
 const loading = ref(false)
 const modelChecking = ref(false)
+const embeddingChecking = ref(false)
 const reindexing = ref(false)
 const reindexMessage = ref('')
 
@@ -36,8 +41,14 @@ function statusClass(status: string) {
 
 function providerLabel(provider: string) {
   if (provider === 'mock') return 'Mock（本地）'
-  if (provider === 'local') return '本地'
+  if (provider === 'local') return 'HuggingFace 本地'
   return '云端'
+}
+
+function backendLabel(backend: string | null | undefined) {
+  if (backend === 'tei') return 'TEI 远程'
+  if (backend === 'huggingface') return '进程内加载'
+  return '-'
 }
 
 async function loadAll() {
@@ -68,6 +79,19 @@ async function handleModelCheck() {
     modelCheckError.value = e instanceof Error ? e.message : '模型检查失败'
   } finally {
     modelChecking.value = false
+  }
+}
+
+async function handleEmbeddingCheck() {
+  embeddingChecking.value = true
+  embeddingCheck.value = null
+  embeddingCheckError.value = ''
+  try {
+    embeddingCheck.value = await postEmbeddingCheck()
+  } catch (e) {
+    embeddingCheckError.value = e instanceof Error ? e.message : 'Embedding 检查失败'
+  } finally {
+    embeddingChecking.value = false
   }
 }
 
@@ -143,6 +167,28 @@ onMounted(loadAll)
       <p v-if="modelCheckError" class="error">{{ modelCheckError }}</p>
     </section>
 
+    <section class="section">
+      <div class="section-head">
+        <h2>Embedding 检查</h2>
+        <span class="hint">该操作会真实调用一次 embedding 服务</span>
+      </div>
+      <div class="actions">
+        <button
+          type="button"
+          class="model-check-btn"
+          :disabled="embeddingChecking"
+          @click="handleEmbeddingCheck"
+        >
+          {{ embeddingChecking ? '检查中…' : '手动测试 Embedding' }}
+        </button>
+        <span v-if="embeddingCheck" class="success">
+          {{ embeddingCheck.backend }} · {{ embeddingCheck.model }} · dim {{ embeddingCheck.dim }} ·
+          {{ embeddingCheck.device }}
+        </span>
+      </div>
+      <p v-if="embeddingCheckError" class="error">{{ embeddingCheckError }}</p>
+    </section>
+
     <p v-if="loading && !health && !ragStatus" class="loading">加载本地状态…</p>
     <p v-if="ragError" class="error">{{ ragError }}</p>
     <p v-if="reindexMessage" class="success">{{ reindexMessage }}</p>
@@ -168,6 +214,10 @@ onMounted(loadAll)
           <span class="label">Embedding 来源</span>
           <span class="value">{{ providerLabel(ragStatus.embedding.provider) }}</span>
         </div>
+        <div v-if="ragStatus.embedding.backend" class="card">
+          <span class="label">Embedding 后端</span>
+          <span class="value">{{ backendLabel(ragStatus.embedding.backend) }}</span>
+        </div>
         <div class="card">
           <span class="label">Embedding 模型</span>
           <span class="value mono">{{ ragStatus.embedding.model }}</span>
@@ -183,6 +233,10 @@ onMounted(loadAll)
         <div class="card">
           <span class="label">设备</span>
           <span class="value">{{ ragStatus.embedding.device }}</span>
+        </div>
+        <div v-if="ragStatus.embedding.api_base" class="card">
+          <span class="label">Embedding 服务</span>
+          <span class="value mono">{{ ragStatus.embedding.api_base }}</span>
         </div>
         <div class="card">
           <span class="label">Embedding 就绪</span>

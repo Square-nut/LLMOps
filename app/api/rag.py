@@ -11,10 +11,12 @@ router = APIRouter()
 
 class EmbeddingStatus(BaseModel):
     provider: str
+    backend: Optional[str] = None
     model: str
     version: str
     dim: int
     device: str
+    api_base: Optional[str] = None
     ready: bool
 
 
@@ -59,6 +61,16 @@ class ModelCheckResponse(BaseModel):
     reply: str
 
 
+class EmbeddingCheckResponse(BaseModel):
+    ok: bool
+    backend: str
+    model: str
+    dim: int
+    device: str
+    api_base: Optional[str] = None
+    sample: str
+
+
 @router.get("/rag/status", response_model=RagStatusResponse)
 async def get_rag_status():
     return RagStatusResponse(**rag_service.get_rag_status())
@@ -77,6 +89,21 @@ async def reindex_rag():
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     return ReindexResponse(**result)
+
+
+@router.post("/rag/embedding-check", response_model=EmbeddingCheckResponse)
+async def check_embedding():
+    try:
+        result = rag_service.check_embedding()
+    except OnlineApiDisabledError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ImportError as exc:
+        raise HTTPException(status_code=501, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return EmbeddingCheckResponse(**result)
 
 
 @router.post("/rag/model-check", response_model=ModelCheckResponse)

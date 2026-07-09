@@ -40,10 +40,12 @@ export interface RagStatusResponse {
   chat_model: string
   embedding: {
     provider: string
+    backend: string | null
     model: string
     version: string
     dim: number
     device: string
+    api_base: string | null
     ready: boolean
   }
   index: {
@@ -76,6 +78,16 @@ export interface ModelCheckResponse {
   model: string
   latency_ms: number
   reply: string
+}
+
+export interface EmbeddingCheckResponse {
+  ok: boolean
+  backend: string
+  model: string
+  dim: number
+  device: string
+  api_base: string | null
+  sample: string
 }
 
 export interface UsageSummary {
@@ -159,4 +171,8 @@ export function postReindex() {
 
 export function postModelCheck() {
   return request<ModelCheckResponse>('/api/rag/model-check', { method: 'POST' })
+}
+
+export function postEmbeddingCheck() {
+  return request<EmbeddingCheckResponse>('/api/rag/embedding-check', { method: 'POST' })
 }

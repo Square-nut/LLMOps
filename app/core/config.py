@@ -34,16 +34,22 @@ class Settings(BaseSettings):
     # --- RAG / Embedding ---------------------------------------------
     # FAISS 索引目录：建议放在项目 data 目录或外置盘
     faiss_index_path: str = "./data/faiss_index"
-    # Embedding 来源：mock / openai / local；local 目前预留未实现
+    # Embedding 来源：mock / openai / local
     embedding_provider: str = "openai"
-    # Embedding 模型：openai 模式常用 text-embedding-3-small
+    # local 后端：tei=远程 TEI/OpenAI 兼容服务；huggingface=本进程加载 HF 模型
+    embedding_backend: str = "tei"
+    # Embedding 模型：openai 常用 text-embedding-3-small；local 常用 BAAI/bge-base-zh-v1.5
     embedding_model: str = "text-embedding-3-small"
     # Embedding 版本：为空时使用 embedding_model；用于判断是否需要重建索引
     embedding_version: str = ""
-    # 向量维度：text-embedding-3-small 默认 1536；换模型后需同步调整
+    # 向量维度：text-embedding-3-small 默认 1536；bge-base-zh-v1.5 默认 768
     embedding_dim: int = 1536
-    # 本地设备：cuda / cpu / mps；仅 local 模式使用，当前预留
+    # 本地设备：cuda / cpu / mps；仅 embedding_backend=huggingface 时使用
     embedding_device: str = "cuda"
+    # 远程 embedding 服务地址：如 http://192.168.x.x:8080/v1（TEI / Xinference）
+    embedding_api_base: str = ""
+    # 远程 embedding API Key：TEI 通常可留空或填任意值
+    embedding_api_key: str = ""
 
     # --- Mock RAG 固定夹具 -------------------------------------------
     # 是否启用：true / false；仅 embedding_provider=mock 时生效

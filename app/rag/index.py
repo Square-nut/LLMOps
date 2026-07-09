@@ -12,6 +12,7 @@ from llama_index.vector_stores.faiss import FaissVectorStore
 from app.core.config import settings
 from app.core.logger import logger
 from app.core.online_api import require_online_api
+from app.rag.local_embedding import get_local_embed_model
 from app.rag.mock_embedding import MockEmbedding
 
 _index: Optional[VectorStoreIndex] = None
@@ -26,9 +27,7 @@ def _get_embed_model():
     if settings.embedding_provider == "mock":
         return MockEmbedding(embed_dim=settings.embedding_dim)
     if settings.embedding_provider == "local":
-        raise NotImplementedError(
-            "Local embedding is not configured yet. Set EMBEDDING_PROVIDER=mock or openai."
-        )
+        return get_local_embed_model()
     return OpenAIEmbedding(
         model=settings.embedding_model,
         api_key=settings.geekai_api_key,
