@@ -90,6 +90,53 @@ export interface EmbeddingCheckResponse {
   sample: string
 }
 
+export interface RuntimeConfigResponse {
+  app: {
+    app_env: string
+    log_level: string
+    allow_online_api: boolean
+  }
+  providers: {
+    geekai_base_url: string
+    geekai_api_key: { configured: boolean }
+    openai_api_key: { configured: boolean }
+    anthropic_api_key: { configured: boolean }
+  }
+  database: {
+    enabled: boolean
+    database_url: { configured: boolean }
+  }
+  embedding: {
+    provider: string
+    backend: string
+    model: string
+    version: string
+    dim: number
+    device: string
+    api_base: string | null
+    api_key: { configured: boolean }
+  }
+  rag: {
+    faiss_index_path: string
+    chunk_size: number
+    chunk_overlap: number
+    retrieval_top_k: number
+  }
+  mock: {
+    rag_enabled: boolean
+    rag_query: string
+    rag_source: string
+    chat_enabled: boolean
+  }
+  routing: {
+    default_model: string
+    reasoning_model: string
+    long_context_model: string
+    fallback_model: string
+  }
+  notes: string[]
+}
+
 export interface UsageSummary {
   chat_count: number
   total_tokens: number
@@ -163,6 +210,10 @@ export function getLogs(limit = 50) {
 
 export function getRagStatus() {
   return request<RagStatusResponse>('/api/rag/status')
+}
+
+export function getRuntimeConfig() {
+  return request<RuntimeConfigResponse>('/api/config')
 }
 
 export function postReindex() {

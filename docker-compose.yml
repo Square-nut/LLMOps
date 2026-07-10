@@ -17,6 +17,27 @@ services:
       timeout: 5s
       retries: 5
 
+  xinference:
+    image: xprobe/xinference:latest
+    command: xinference-local -H 0.0.0.0
+    ports:
+      - "9997:9997"
+    environment:
+      XINFERENCE_HOME: /root/.xinference
+      XINFERENCE_MODEL_SRC: modelscope
+    volumes:
+      - ./data/xinference:/root/.xinference
+      - ./data/huggingface:/root/.cache/huggingface
+    shm_size: 8gb
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+
   api:
     build: .
     ports:

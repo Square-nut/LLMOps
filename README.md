@@ -80,12 +80,35 @@ docker compose exec postgres psql -U llmops -d llmops -c "SELECT id, model, toke
 docker compose up --build
 ```
 
+### 本地 Xinference（Docker + GPU）
+
+```sh
+# 需 Docker Desktop + NVIDIA Container Toolkit（--gpus all）
+docker compose up xinference -d
+```
+
+浏览器打开 http://127.0.0.1:9997 ，在 Web UI 中 Launch 模型（3060 12G 推荐）：
+
+| 类型 | 模型 | 维度 |
+|------|------|------|
+| Embedding | `bge-base-zh-v1.5` | 768 |
+| Chat | `qwen2.5-instruct` 7B | — |
+
+Launch 后复制 Running Models 里的 **model uid**，写入 `.env`（见 `.env.example` 中「本地 Xinference」注释块）。
+
+- 本地 `uvicorn`：`GEEKAI_BASE_URL=http://127.0.0.1:9997/v1`
+- `docker compose` 里的 api 容器：`GEEKAI_BASE_URL=http://xinference:9997/v1`
+
+换 embedding 后需删 `./data/faiss_index/` 并重新 ingest。
+
 ## 数据存储位置（外置硬盘）
 
 | 路径 | 内容 |
 |------|------|
 | `./data/postgres/` | PostgreSQL 数据 |
 | `./data/faiss_index/` | RAG 向量索引 |
+| `./data/xinference/` | Xinference 模型与缓存 |
+| `./data/huggingface/` | HuggingFace 下载缓存 |
 
 均在 `.gitignore` 中，不会进 Git。
 
