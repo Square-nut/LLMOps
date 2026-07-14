@@ -9,8 +9,8 @@ Constraints:
 - API-first
 - Fast to ship
 - Easy to scale later
-- **Hybrid deployment**: Chat via cloud API, models via Xinference on Win PC GPU
-- Optional local Chat LLM later (via Xinference / Ollama)
+- **Hybrid deployment**: Windows runs the product, WSL2 runs Xinference on the RTX 3060
+- Default Chat uses a cloud OpenAI-compatible API; local Chat is an optional Xinference model
 
 ---
 
@@ -66,15 +66,39 @@ Data:
 
 ### Hybrid Deployment Model
 
+### Actual Local Development Topology (2026-07)
+
+```text
+Windows
+├── Docker Desktop: PostgreSQL (:5432)
+├── FastAPI backend (:8000)
+└── Vue/Vite frontend (:5173)
+
+WSL2 (NAT address exposed to Windows)
+└── Xinference (:9997)
+    ├── bge-base-zh-v1.5 — local embedding, 768 dimensions
+    └── optional Qwen 7B GGUF — local Chat, Q4 quantization
+```
+
+The backend calls Xinference through `EMBEDDING_API_BASE`. The current
+adapter sends requests directly to `/v1/embeddings`, so custom Xinference
+model UIDs are supported without LlamaIndex's OpenAI model enum. PostgreSQL
+stores documents, chunks, versions, and logs; FAISS stores vectors locally.
+
+Xinference is a runtime service and model launch is separate: restarting the
+Xinference supervisor can leave `/v1/models` empty, in which case BGE must be
+launched again before RAG queries can embed their input.
+
 | Component | Runtime | Provider | Notes |
 |-----------|---------|----------|-------|
-| Chat LLM | Cloud API | GeekAI | Default; stable quality |
-| Embedding | Win PC GPU | BGE via **Xinference** | OpenAI-compatible `/v1` |
-| Vision (YOLO) | Win PC GPU | **Xinference** flexible YOLO | Business logic stays in LLMOps |
+| Chat LLM | Cloud API | GeekAI | Default; requires a valid `GEEKAI_API_KEY` |
+| Chat LLM (optional) | WSL2 GPU | Qwen 7B GGUF via Xinference | RTX 3060 12GB; use Q4 quantization |
+| Embedding | WSL2 GPU | BGE via **Xinference** | OpenAI-compatible `/v1` |
+| Vision (YOLO) | WSL2 GPU | **Xinference** flexible YOLO | Business logic stays in LLMOps |
 | Vector DB | Local | FAISS | Same machine as backend |
 | Metadata DB | Local | PostgreSQL | documents / chunks / logs |
 | Model ops UI | Win PC | Xinference Web | Admin only; not end-user facing |
-| Product UI | Dev machine | LLMOps Vue | Chat / Ingest / Status / Vision |
+| Product UI | Windows | LLMOps Vue | Chat / Ingest / Status / Vision |
 
 **Why hybrid:**
 - Chat quality depends on large models → keep cloud API for now
@@ -102,6 +126,22 @@ Data:
 | Dev Mock | mock embedding + mock chat | ✅ |
 
 ### Deferred / Future
+
+### Current Implementation Status
+
+- FastAPI, Vue/Vite, PostgreSQL, LlamaIndex, and FAISS are implemented.
+- `bge-base-zh-v1.5` is deployed in WSL2 Xinference on the RTX 3060 and is
+  used for both document and query embeddings.
+- The local embedding adapter calls Xinference's OpenAI-compatible API
+  directly and supports the custom model UID `bge-base-zh-v1.5`.
+- RAG restores the complete persisted LlamaIndex state (`docstore.json`,
+  `index_store.json`, and the FAISS vector store), rather than trying to
+  initialize from FAISS alone.
+- `npm start` starts PostgreSQL, Xinference, FastAPI, and Vue; the BGE model
+  itself must be launched after Xinference if its model list is empty.
+- Local Chat is not the default yet. The planned first candidate is a Qwen
+  7B GGUF Q4 model served by Xinference; it can coexist with BGE if context
+  length and GPU memory are kept under control.
 
 | Layer | Original Plan | Decision |
 |-------|---------------|----------|
@@ -293,6 +333,32 @@ _get_embed_model() in index.py
 ```
 
 ### Win PC Deployment (Xinference)
+
+The stable deployment uses WSL2 native Linux rather than a Windows bind
+mount or a Docker Xinference container. Docker is reserved for PostgreSQL.
+This avoids Windows filesystem permission and Python dependency issues in the
+Xinference virtual environment.
+
+```bash
+source ~/xinference-runtime/.venv/bin/activate
+export XINFERENCE_HOME=$HOME/.xinference
+export XINFERENCE_MODEL_SRC=modelscope
+export XINFERENCE_ENABLE_VIRTUAL_ENV=0
+xinference-local -H 0.0.0.0 --port 9997
+```
+
+Windows uses the current WSL IP in `.env`:
+
+```env
+EMBEDDING_PROVIDER=local
+EMBEDDING_BACKEND=tei
+EMBEDDING_MODEL=bge-base-zh-v1.5
+EMBEDDING_DIM=768
+EMBEDDING_API_BASE=http://<wsl-ip>:9997/v1
+```
+
+The API is OpenAI-compatible, but the BGE model must be present in
+`GET /v1/models`; otherwise embedding requests return 404.
 
 Primary plan for RTX 3060 machine — **one platform** for Embedding + YOLO:
 
@@ -513,6 +579,14 @@ The Status page (`/status`) is the **single pane of glass** for daily operations
 ---
 
 ## 17. Success Criteria
+
+### Updated Progress
+
+- Phase 6 local embedding adapter: complete.
+- Phase 7 WSL2 Xinference + BGE end-to-end: complete.
+- Windows one-command development startup: complete via `npm start`.
+- Local Chat through Xinference: optional next step; Qwen 7B GGUF Q4 is the
+  target for the RTX 3060 12GB.
 
 - System runs in single repo
 - One command deploy (`npm start`)

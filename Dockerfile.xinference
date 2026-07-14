@@ -1,0 +1,5 @@
+FROM xprobe/xinference:v2.10.0
+
+RUN /usr/local/bin/pip uninstall -y torchcodec flash-attn || true
+
+COPY sitecustomize.py /usr/local/lib/python3.12/site-packages/sitecustomize.py

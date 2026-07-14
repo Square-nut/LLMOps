@@ -1,10 +1,67 @@
-from typing import Any, Dict, Optional
+import asyncio
+import json
+from typing import Any, Dict, List, Optional
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 from llama_index.core.embeddings import BaseEmbedding
 
 from app.core.config import settings
 
 _embed_model: Optional[BaseEmbedding] = None
+
+
+class XinferenceEmbedding(BaseEmbedding):
+    """Minimal OpenAI-compatible embedding client for Xinference.
+
+    LlamaIndex's OpenAIEmbedding validates ``model`` against its own enum,
+    which rejects Xinference model UIDs such as ``bge-base-zh-v1.5``. This
+    adapter keeps the LlamaIndex BaseEmbedding contract while sending the
+    request directly to Xinference's ``/embeddings`` endpoint.
+    """
+
+    api_base: str
+    api_key: str = "xinference"
+    timeout: float = 60.0
+
+    def _embed(self, inputs: str | List[str]) -> List[List[float]]:
+        payload = json.dumps({"model": self.model_name, "input": inputs}).encode(
+            "utf-8"
+        )
+        request = Request(
+            f"{self.api_base.rstrip('/')}/embeddings",
+            data=payload,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {self.api_key}",
+            },
+            method="POST",
+        )
+        try:
+            with urlopen(request, timeout=self.timeout) as response:
+                body = json.loads(response.read().decode("utf-8"))
+        except (HTTPError, URLError, TimeoutError) as exc:
+            raise RuntimeError(
+                f"Xinference embedding request failed at {self.api_base}: {exc}"
+            ) from exc
+
+        data = sorted(body.get("data", []), key=lambda item: item.get("index", 0))
+        embeddings = [item["embedding"] for item in data]
+        if not embeddings:
+            raise RuntimeError(f"Xinference returned no embeddings: {body}")
+        return embeddings
+
+    def _get_query_embedding(self, query: str) -> List[float]:
+        return self._embed(query)[0]
+
+    async def _aget_query_embedding(self, query: str) -> List[float]:
+        return await asyncio.to_thread(self._get_query_embedding, query)
+
+    def _get_text_embedding(self, text: str) -> List[float]:
+        return self._embed(text)[0]
+
+    def _get_text_embeddings(self, texts: List[str]) -> List[List[float]]:
+        return self._embed(texts)
 
 
 def reset_local_embed_cache() -> None:
@@ -36,10 +93,8 @@ def get_local_embed_model() -> BaseEmbedding:
     backend = settings.embedding_backend
 
     if backend == "tei":
-        from llama_index.embeddings.openai import OpenAIEmbedding
-
-        _embed_model = OpenAIEmbedding(
-            model=settings.embedding_model,
+        _embed_model = XinferenceEmbedding(
+            model_name=settings.embedding_model,
             api_key=settings.embedding_api_key or "tei",
             api_base=settings.embedding_api_base.rstrip("/"),
         )

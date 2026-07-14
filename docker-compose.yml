@@ -18,15 +18,21 @@ services:
       retries: 5
 
   xinference:
-    image: xprobe/xinference:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.xinference
     command: xinference-local -H 0.0.0.0
     ports:
       - "9997:9997"
     environment:
       XINFERENCE_HOME: /root/.xinference
       XINFERENCE_MODEL_SRC: modelscope
+      XINFERENCE_ENABLE_VIRTUAL_ENV: "1"
+      PYTHONPATH: /usr/local/lib/python3.12/site-packages
     volumes:
       - ./data/xinference:/root/.xinference
+      - xinference_virtualenv_v2:/root/.xinference/virtualenv
+      - xinference_uv_cache:/root/.xinference/openmind_hub/uv
       - ./data/huggingface:/root/.cache/huggingface
     shm_size: 8gb
     deploy:
@@ -52,3 +58,7 @@ services:
       postgres:
         condition: service_healthy
     restart: unless-stopped
+
+volumes:
+  xinference_virtualenv_v2:
+  xinference_uv_cache:

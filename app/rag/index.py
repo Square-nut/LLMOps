@@ -5,7 +5,12 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 import faiss
-from llama_index.core import Document, StorageContext, VectorStoreIndex
+from llama_index.core import (
+    Document,
+    StorageContext,
+    VectorStoreIndex,
+    load_index_from_storage,
+)
 from llama_index.embeddings.openai import OpenAIEmbedding
 from llama_index.vector_stores.faiss import FaissVectorStore
 
@@ -157,9 +162,11 @@ def _load_or_create_index() -> VectorStoreIndex:
             vector_store=vector_store,
             persist_dir=str(index_dir),
         )
-        _index = VectorStoreIndex.from_vector_store(
-            vector_store,
-            storage_context=storage_context,
+        # FAISS stores vectors only. The text nodes and index metadata live in
+        # docstore.json/index_store.json, so restore the complete persisted
+        # index instead of rebuilding from the vector store alone.
+        _index = load_index_from_storage(
+            storage_context,
             embed_model=embed_model,
         )
         logger.info("Loaded FAISS index from %s", index_dir)

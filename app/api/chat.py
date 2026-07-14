@@ -1,6 +1,7 @@
 from typing import Dict, Optional
 
 from fastapi import APIRouter, HTTPException
+from openai import AuthenticationError
 from pydantic import BaseModel, Field
 
 from app.core.online_api import OnlineApiDisabledError
@@ -38,4 +39,11 @@ async def chat_endpoint(body: ChatRequest) -> ChatResponse:
         raise HTTPException(status_code=501, detail=str(exc)) from exc
     except OnlineApiDisabledError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except AuthenticationError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="在线 Chat API 认证失败，请检查 GEEKAI_API_KEY。",
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     return ChatResponse(**result)
