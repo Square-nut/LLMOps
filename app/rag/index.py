@@ -35,8 +35,8 @@ def _get_embed_model():
         return get_local_embed_model()
     return OpenAIEmbedding(
         model=settings.embedding_model,
-        api_key=settings.geekai_api_key,
-        api_base=settings.geekai_base_url,
+        api_key=settings.embedding_api_key or settings.geekai_api_key,
+        api_base=settings.embedding_api_base or settings.geekai_base_url,
     )
 
 
@@ -157,6 +157,17 @@ def _load_or_create_index() -> VectorStoreIndex:
             raise ValueError(
                 f"FAISS index dimension ({stored_dim}) does not match EMBEDDING_DIM ({settings.embedding_dim}). Reindex required."
             )
+        meta = _read_index_meta() or {}
+        for field, current in (
+            ("embedding_model", settings.embedding_model),
+            ("embedding_provider", settings.embedding_provider),
+            ("embedding_version", settings.effective_embedding_version),
+        ):
+            stored = meta.get(field)
+            if stored and stored != current:
+                raise ValueError(
+                    f"FAISS index {field} ({stored}) does not match current setting ({current}). Reindex required."
+                )
         vector_store = FaissVectorStore.from_persist_dir(str(index_dir))
         storage_context = StorageContext.from_defaults(
             vector_store=vector_store,

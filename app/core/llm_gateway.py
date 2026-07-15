@@ -15,12 +15,17 @@ def get_client() -> OpenAI:
     global _client
     if _client is None:
         if not settings.geekai_api_key:
-            raise ValueError("GEEKAI_API_KEY is not configured")
+            raise ValueError("Active chat provider API key is not configured")
         _client = OpenAI(
             api_key=settings.geekai_api_key,
             base_url=settings.geekai_base_url,
         )
     return _client
+
+
+def reset_client() -> None:
+    global _client
+    _client = None
 
 
 class TaskType(str, Enum):

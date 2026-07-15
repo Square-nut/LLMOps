@@ -13,7 +13,7 @@ Minimal LLM + RAG application (FastAPI backend + Vue frontend).
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements-full.txt
-cp .env.example .env   # 填入 GEEKAI_API_KEY、DATABASE_URL
+cp .env.example .env   # 填入 DATABASE_URL，以及实际使用的 GEEKAI_API_KEY / OPENAI_API_KEY
 ```
 
 ### 1. 启动本地数据库（Docker，数据在外置硬盘 ./data/）

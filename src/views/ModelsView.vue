@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { onMounted, reactive, ref, watch } from 'vue'
 import {
+  activateModel,
   createModel,
   deleteModel,
   getModels,
@@ -17,7 +18,7 @@ function emptyForm(): FormState {
     model_key: '',
     display_name: '',
     model_type: 'chat',
-    provider: 'xinference',
+    provider: 'geekai',
     model_name: '',
     endpoint: '',
     dimension: '',
@@ -29,7 +30,9 @@ function emptyForm(): FormState {
 const models = ref<ModelConfig[]>([])
 const loading = ref(true)
 const saving = ref(false)
+const activatingId = ref<string | null>(null)
 const error = ref('')
+const activationMessage = ref('')
 const editingId = ref<string | null>(null)
 const form = reactive<FormState>(emptyForm())
 
@@ -41,6 +44,59 @@ function resetForm() {
 function typeLabel(type: ModelType) {
   return { chat: '对话', embedding: 'Embedding', vision: '视觉' }[type]
 }
+
+const providerOptions: Record<ModelType, Array<{ value: string; label: string }>> = {
+  chat: [
+    { value: 'geekai', label: 'GeekAI 中转站' },
+    { value: 'openai', label: 'OpenAI 官方 API' },
+    { value: 'xinference', label: 'Xinference 本地模型' },
+    { value: 'ollama', label: 'Ollama 本地模型' },
+  ],
+  embedding: [
+    { value: 'xinference', label: 'Xinference 本地模型' },
+    { value: 'tei', label: 'TEI 本地服务' },
+    { value: 'geekai', label: 'GeekAI 中转站' },
+    { value: 'openai', label: 'OpenAI 官方 API' },
+    { value: 'mock', label: 'Mock（联调）' },
+  ],
+  vision: [{ value: 'xinference', label: 'Xinference（预留）' }],
+}
+
+function providerLabel(provider: string) {
+  for (const options of Object.values(providerOptions)) {
+    const item = options.find((option) => option.value === provider)
+    if (item) return item.label
+  }
+  return provider
+}
+
+function endpointRequired() {
+  return ['xinference', 'tei', 'ollama'].includes(form.provider)
+}
+
+function endpointPlaceholder() {
+  if (form.provider === 'ollama') return 'http://localhost:11434/v1'
+  if (form.provider === 'xinference' || form.provider === 'tei') return 'http://winpc:9997/v1'
+  if (form.provider === 'openai') return '默认 https://api.openai.com/v1'
+  return '留空则使用 .env 中的 GeekAI 地址'
+}
+
+function credentialHint() {
+  if (form.provider === 'openai') return '凭据读取 .env 中的 OPENAI_API_KEY。'
+  if (form.provider === 'geekai') return '凭据读取 .env 中的 GEEKAI_API_KEY。'
+  if (form.provider === 'mock') return 'Mock 不会请求外部模型服务。'
+  return '本地服务不在页面保存密钥；如服务需要认证，读取 .env 中的 EMBEDDING_API_KEY。'
+}
+
+watch(
+  () => form.model_type,
+  (modelType) => {
+    const options = providerOptions[modelType]
+    if (!options.some((option) => option.value === form.provider)) {
+      form.provider = options[0]!.value
+    }
+  },
+)
 
 function formatTime(value: string) {
   return new Date(value).toLocaleString('zh-CN')
@@ -55,6 +111,24 @@ async function load() {
     error.value = e instanceof Error ? e.message : '无法加载模型列表'
   } finally {
     loading.value = false
+  }
+}
+
+async function activate(item: ModelConfig) {
+  const action = item.model_type === 'embedding' ? '切换后必须重建本机 FAISS 索引。仍要继续吗？' : '后续新对话将使用该模型。仍要继续吗？'
+  if (!confirm(`设「${item.display_name}」为当前${typeLabel(item.model_type)}模型？${action}`)) return
+
+  activatingId.value = item.id
+  error.value = ''
+  activationMessage.value = ''
+  try {
+    const result = await activateModel(item.id)
+    activationMessage.value = result.message
+    await load()
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : '模型切换失败'
+  } finally {
+    activatingId.value = null
   }
 }
 
@@ -143,6 +217,7 @@ onMounted(load)
     </div>
 
     <p v-if="error" class="error">{{ error }}</p>
+    <p v-if="activationMessage" class="success">{{ activationMessage }}</p>
 
     <div class="content-grid">
       <section class="table-wrap">
@@ -169,12 +244,24 @@ onMounted(load)
                 <span class="sub mono">{{ item.model_key }}</span>
               </td>
               <td><span class="type-tag">{{ typeLabel(item.model_type) }}</span></td>
-              <td>{{ item.provider }}</td>
+              <td>{{ providerLabel(item.provider) }}</td>
               <td class="mono">{{ item.model_name }}</td>
               <td class="endpoint mono" :title="item.endpoint || ''">{{ item.endpoint || '-' }}</td>
-              <td><span class="state" :class="item.enabled ? 'enabled' : 'disabled'">{{ item.enabled ? '启用' : '停用' }}</span></td>
+              <td>
+                <span v-if="item.is_active" class="state current">当前使用</span>
+                <span v-else class="state" :class="item.enabled ? 'enabled' : 'disabled'">{{ item.enabled ? '启用' : '停用' }}</span>
+              </td>
               <td class="time">{{ formatTime(item.updated_at) }}</td>
               <td class="actions">
+                <button
+                  v-if="item.model_type !== 'vision'"
+                  type="button"
+                  class="activate"
+                  :disabled="!item.enabled || item.is_active || activatingId === item.id"
+                  @click="activate(item)"
+                >
+                  {{ item.is_active ? '当前使用' : activatingId === item.id ? '切换中…' : '设为当前' }}
+                </button>
                 <button type="button" @click="edit(item)">编辑</button>
                 <button type="button" class="danger" @click="remove(item)">删除</button>
               </td>
@@ -208,19 +295,28 @@ onMounted(load)
               </select>
             </label>
             <label>
-              <span>运行时 / Provider</span>
-              <input v-model="form.provider" required placeholder="xinference、geekai、ollama…" />
+              <span>接入方式</span>
+              <select v-model="form.provider">
+                <option v-for="option in providerOptions[form.model_type]" :key="option.value" :value="option.value">
+                  {{ option.label }}
+                </option>
+              </select>
             </label>
           </div>
           <label>
             <span>模型名称</span>
-            <input v-model="form.model_name" required placeholder="BAAI/bge-base-zh-v1.5" />
+            <input
+              v-model="form.model_name"
+              required
+              :placeholder="form.model_type === 'embedding' ? 'BAAI/bge-base-zh-v1.5' : 'deepseek / qwen / gpt 模型标识'"
+            />
           </label>
           <label>
-            <span>服务端点（可选）</span>
-            <input v-model="form.endpoint" type="url" placeholder="http://winpc:9997/v1" />
+            <span>服务端点{{ endpointRequired() ? '（必填）' : '（可选）' }}</span>
+            <input v-model="form.endpoint" type="url" :required="endpointRequired()" :placeholder="endpointPlaceholder()" />
+            <small>{{ credentialHint() }}</small>
           </label>
-          <label>
+          <label v-if="form.model_type === 'embedding'">
             <span>向量维度（Embedding 可填）</span>
             <input v-model="form.dimension" type="number" min="1" step="1" placeholder="768" />
           </label>
@@ -260,11 +356,14 @@ tr:hover td { background: rgba(0, 0, 0, .02); }
 .type-tag, .state { display: inline-block; border-radius: 99px; padding: .2rem .5rem; font-size: .75rem; white-space: nowrap; }
 .type-tag { background: rgba(84, 54, 218, .1); color: #5436da; }
 .state.enabled { background: rgba(16, 163, 127, .12); color: #08775a; }
+.state.current { background: rgba(84, 54, 218, .13); color: #5436da; font-weight: 600; }
 .state.disabled { background: #eee; color: #777; }
 .time { color: #6e6e80; white-space: nowrap; }
 .actions { display: flex; gap: .35rem; white-space: nowrap; }
 .actions button { padding: .3rem .55rem; font-size: .75rem; }
 .actions .danger { color: var(--error); }
+.actions .activate { border-color: var(--accent); color: var(--accent); }
+.actions .activate:disabled { cursor: default; opacity: .6; }
 .empty { text-align: center; color: #8e8e8e; padding: 2rem !important; }
 .form-card { padding: 1.25rem; }
 .form-title { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
@@ -280,5 +379,6 @@ small { color: #8e8e8e; font-weight: 400; }
 .toggle input { width: auto; }
 .save-btn { border: 0; border-radius: .5rem; padding: .6rem .9rem; background: var(--accent); color: white; cursor: pointer; font: inherit; font-size: .875rem; }
 .error { margin: 0 0 1rem; color: var(--error); font-size: .875rem; }
+.success { margin: 0 0 1rem; color: #08775a; font-size: .875rem; }
 @media (max-width: 1250px) { .content-grid { grid-template-columns: 1fr; } .form-card { max-width: 42rem; } }
 </style>

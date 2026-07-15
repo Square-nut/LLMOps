@@ -42,6 +42,7 @@ create table if not exists model_configs (
     endpoint text,
     dimension integer check (dimension is null or dimension > 0),
     enabled boolean not null default true,
+    is_active boolean not null default false,
     notes text not null default '',
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now()
@@ -51,7 +52,10 @@ create index if not exists idx_llm_logs_created_at on llm_logs(created_at desc);
 create index if not exists idx_chunks_document_id on chunks(document_id);
 create index if not exists idx_documents_created_at on documents(created_at desc);
 create index if not exists idx_model_configs_type on model_configs(model_type);
+create unique index if not exists idx_model_configs_one_active_per_type
+    on model_configs(model_type) where is_active;
 
 -- 已有库升级（可单独执行）
 alter table llm_logs add column if not exists prompt_tokens integer default 0;
 alter table llm_logs add column if not exists completion_tokens integer default 0;
+alter table model_configs add column if not exists is_active boolean not null default false;

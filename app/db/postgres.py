@@ -39,12 +39,18 @@ def ensure_schema() -> None:
             endpoint text,
             dimension integer check (dimension is null or dimension > 0),
             enabled boolean not null default true,
+            is_active boolean not null default false,
             notes text not null default '',
             created_at timestamptz not null default now(),
             updated_at timestamptz not null default now()
         )
         """,
         "create index if not exists idx_model_configs_type on model_configs(model_type)",
+        "alter table model_configs add column if not exists is_active boolean not null default false",
+        """
+        create unique index if not exists idx_model_configs_one_active_per_type
+        on model_configs(model_type) where is_active
+        """,
     ]
 
     try:
@@ -326,7 +332,7 @@ def list_model_configs() -> List[Dict[str, Any]]:
             cur.execute(
                 """
                 SELECT id, model_key, display_name, model_type, provider, model_name,
-                       endpoint, dimension, enabled, notes, created_at, updated_at
+                       endpoint, dimension, enabled, is_active, notes, created_at, updated_at
                 FROM model_configs
                 ORDER BY model_type, display_name
                 """
@@ -353,7 +359,7 @@ def create_model_config(**values: Any) -> Dict[str, Any]:
                     (%(model_key)s, %(display_name)s, %(model_type)s, %(provider)s,
                      %(model_name)s, %(endpoint)s, %(dimension)s, %(enabled)s, %(notes)s)
                 RETURNING id, model_key, display_name, model_type, provider, model_name,
-                          endpoint, dimension, enabled, notes, created_at, updated_at
+                          endpoint, dimension, enabled, is_active, notes, created_at, updated_at
                 """,
                 values,
             )
@@ -375,6 +381,13 @@ def update_model_config(*, model_id: str, **values: Any) -> Optional[Dict[str, A
     try:
         with conn.cursor() as cur:
             cur.execute(
+                "SELECT is_active FROM model_configs WHERE id = %s FOR UPDATE",
+                (model_id,),
+            )
+            existing = cur.fetchone()
+            if existing and existing["is_active"] and not values["enabled"]:
+                raise ValueError("Active model cannot be disabled")
+            cur.execute(
                 """
                 UPDATE model_configs
                 SET model_key = %(model_key)s,
@@ -389,7 +402,7 @@ def update_model_config(*, model_id: str, **values: Any) -> Optional[Dict[str, A
                     updated_at = now()
                 WHERE id = %(model_id)s
                 RETURNING id, model_key, display_name, model_type, provider, model_name,
-                          endpoint, dimension, enabled, notes, created_at, updated_at
+                          endpoint, dimension, enabled, is_active, notes, created_at, updated_at
                 """,
                 {**values, "model_id": model_id},
             )
@@ -410,10 +423,104 @@ def delete_model_config(*, model_id: str) -> bool:
 
     try:
         with conn.cursor() as cur:
-            cur.execute("DELETE FROM model_configs WHERE id = %s", (model_id,))
+            cur.execute(
+                "DELETE FROM model_configs WHERE id = %s AND is_active = false",
+                (model_id,),
+            )
             deleted = cur.rowcount > 0
         conn.commit()
         return deleted
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def get_active_model_config(model_type: str) -> Optional[Dict[str, Any]]:
+    conn = _get_connection()
+    if conn is None:
+        return None
+
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, model_key, display_name, model_type, provider, model_name,
+                       endpoint, dimension, enabled, is_active, notes, created_at, updated_at
+                FROM model_configs
+                WHERE model_type = %s AND is_active = true
+                """,
+                (model_type,),
+            )
+            row = cur.fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def get_model_config(model_id: str) -> Optional[Dict[str, Any]]:
+    conn = _get_connection()
+    if conn is None:
+        raise RuntimeError("Database unavailable")
+
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, model_key, display_name, model_type, provider, model_name,
+                       endpoint, dimension, enabled, is_active, notes, created_at, updated_at
+                FROM model_configs
+                WHERE id = %s
+                """,
+                (model_id,),
+            )
+            row = cur.fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def activate_model_config(*, model_id: str) -> Optional[Dict[str, Any]]:
+    conn = _get_connection()
+    if conn is None:
+        raise RuntimeError("Database unavailable")
+
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, model_type, enabled
+                FROM model_configs
+                WHERE id = %s
+                FOR UPDATE
+                """,
+                (model_id,),
+            )
+            candidate = cur.fetchone()
+            if candidate is None:
+                conn.rollback()
+                return None
+            if not candidate["enabled"]:
+                raise ValueError("Disabled model cannot be activated")
+
+            cur.execute(
+                "UPDATE model_configs SET is_active = false WHERE model_type = %s",
+                (candidate["model_type"],),
+            )
+            cur.execute(
+                """
+                UPDATE model_configs
+                SET is_active = true, updated_at = now()
+                WHERE id = %s
+                RETURNING id, model_key, display_name, model_type, provider, model_name,
+                          endpoint, dimension, enabled, is_active, notes, created_at, updated_at
+                """,
+                (model_id,),
+            )
+            row = cur.fetchone()
+        conn.commit()
+        return dict(row) if row else None
     except Exception:
         conn.rollback()
         raise

@@ -572,9 +572,24 @@ enabled state, and notes in PostgreSQL.
 - The catalogue intentionally stores no API keys or other secrets.
 - It does not start, stop, or load model weights; Xinference remains the model
   runtime and administration surface.
-- Current `.env` routing remains authoritative for active chat and embedding
-  traffic. A later activation workflow can select a catalogue entry and update
-  the runtime configuration with validation and reindex safeguards.
+- A Chat or Embedding record can be set as the current model. The selection is
+  persisted in PostgreSQL, applied immediately to the current API process, and
+  restored on API startup. `.env` remains the fallback when no record is active.
+- Activating an Embedding model invalidates the local FAISS index. Reindex is
+  mandatory before ingest or retrieval resumes; the API blocks mixed-model
+  indexes rather than silently combining vectors.
+
+### Provider routing
+
+| Model type | Supported routes | Credentials stored in |
+|---|---|---|
+| Chat | GeekAI, OpenAI official API, Xinference, Ollama | `.env` only |
+| Embedding | Xinference, TEI, GeekAI, OpenAI official API, Mock | `.env` only |
+
+The model record holds the provider, model identifier, and optional endpoint.
+For GeekAI and OpenAI, an empty endpoint uses the configured default endpoint.
+Xinference, TEI, and Ollama require an explicit OpenAI-compatible `/v1`
+endpoint. API keys never enter PostgreSQL or the browser.
 
 ---
 
@@ -589,7 +604,7 @@ enabled state, and notes in PostgreSQL.
 | Phase 5 | Mock RAG/Chat for offline dev | ✅ Done |
 | Phase 6 | HuggingFace local embedding config + remote adapter | ✅ Done (config) |
 | Phase 7 | Win PC Xinference deploy + end-to-end local embedding | ✅ Done |
-| Phase 7a | Editable model catalogue (PostgreSQL CRUD + Vue page) | ✅ Done |
+| Phase 7a | Editable model catalogue + Chat/Embedding active switch | ✅ Done |
 | Phase 8 | Status page model service dashboard (`model_services`) | 🔲 Planned |
 | Phase 9 | Vision module (YOLO + zone check + page) | 🔲 Planned |
 | Phase 10 (optional) | LiteLLM multi-provider gateway | 🔲 Deferred |

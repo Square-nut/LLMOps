@@ -7,6 +7,7 @@ from app.api import chat, config, ingest, logs, models, rag
 from app.core.config import settings
 from app.core.logger import logger
 from app.db import postgres as db
+from app.services.model_runtime import apply_persisted_active_models
 
 
 @asynccontextmanager
@@ -14,6 +15,7 @@ async def lifespan(app: FastAPI):
     logger.info("Starting LLMOps API (env=%s)", settings.app_env)
     if settings.database_enabled:
         db.ensure_schema()
+        apply_persisted_active_models()
     yield
     logger.info("Shutting down LLMOps API")
 

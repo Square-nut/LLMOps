@@ -190,8 +190,15 @@ export interface ModelConfigInput {
 
 export interface ModelConfig extends ModelConfigInput {
   id: string
+  is_active: boolean
   created_at: string
   updated_at: string
+}
+
+export interface ModelActivationResponse {
+  model: ModelConfig
+  requires_reindex: boolean
+  message: string
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
@@ -263,4 +270,8 @@ export function updateModel(id: string, body: ModelConfigInput) {
 
 export function deleteModel(id: string) {
   return request<void>(`/api/models/${id}`, { method: 'DELETE' })
+}
+
+export function activateModel(id: string) {
+  return request<ModelActivationResponse>(`/api/models/${id}/activate`, { method: 'POST' })
 }

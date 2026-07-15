@@ -41,6 +41,12 @@ def get_rag_status() -> Dict[str, Any]:
                 f"索引模型 ({stored_model}) 与当前配置 ({settings.embedding_model}) 不一致，需要重建索引"
             )
 
+        stored_provider = index_status.get("stored_embedding_provider")
+        if stored_provider and stored_provider != settings.embedding_provider:
+            warnings.append(
+                f"索引来源 ({stored_provider}) 与当前配置 ({settings.embedding_provider}) 不一致，需要重建索引"
+            )
+
         db_total = chunk_stats["total"]
         index_total = index_status["vector_count"]
         if db_total > 0 and index_total == 0:
