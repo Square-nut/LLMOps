@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import chat, config, ingest, logs, rag
+from app.api import chat, config, ingest, logs, models, rag
 from app.core.config import settings
 from app.core.logger import logger
 from app.db import postgres as db
@@ -37,6 +37,7 @@ app.include_router(chat.router, prefix="/api", tags=["chat"])
 app.include_router(config.router, prefix="/api", tags=["config"])
 app.include_router(ingest.router, prefix="/api", tags=["ingest"])
 app.include_router(logs.router, prefix="/api", tags=["logs"])
+app.include_router(models.router, prefix="/api", tags=["models"])
 app.include_router(rag.router, prefix="/api", tags=["rag"])
 
 

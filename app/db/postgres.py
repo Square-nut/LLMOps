@@ -25,8 +25,26 @@ def ensure_schema() -> None:
         return
 
     migrations = [
+        "create extension if not exists pgcrypto",
         "alter table llm_logs add column if not exists prompt_tokens integer default 0",
         "alter table llm_logs add column if not exists completion_tokens integer default 0",
+        """
+        create table if not exists model_configs (
+            id uuid primary key default gen_random_uuid(),
+            model_key text not null unique,
+            display_name text not null,
+            model_type text not null check (model_type in ('chat', 'embedding', 'vision')),
+            provider text not null,
+            model_name text not null,
+            endpoint text,
+            dimension integer check (dimension is null or dimension > 0),
+            enabled boolean not null default true,
+            notes text not null default '',
+            created_at timestamptz not null default now(),
+            updated_at timestamptz not null default now()
+        )
+        """,
+        "create index if not exists idx_model_configs_type on model_configs(model_type)",
     ]
 
     try:
@@ -294,5 +312,110 @@ def get_usage_summary() -> Dict[str, Any]:
             chunk_stats = dict(cur.fetchone() or {})
 
         return {**chat_stats, **doc_stats, **chunk_stats}
+    finally:
+        conn.close()
+
+
+def list_model_configs() -> List[Dict[str, Any]]:
+    conn = _get_connection()
+    if conn is None:
+        raise RuntimeError("Database unavailable")
+
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, model_key, display_name, model_type, provider, model_name,
+                       endpoint, dimension, enabled, notes, created_at, updated_at
+                FROM model_configs
+                ORDER BY model_type, display_name
+                """
+            )
+            rows = cur.fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+def create_model_config(**values: Any) -> Dict[str, Any]:
+    conn = _get_connection()
+    if conn is None:
+        raise RuntimeError("Database unavailable")
+
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO model_configs
+                    (model_key, display_name, model_type, provider, model_name,
+                     endpoint, dimension, enabled, notes)
+                VALUES
+                    (%(model_key)s, %(display_name)s, %(model_type)s, %(provider)s,
+                     %(model_name)s, %(endpoint)s, %(dimension)s, %(enabled)s, %(notes)s)
+                RETURNING id, model_key, display_name, model_type, provider, model_name,
+                          endpoint, dimension, enabled, notes, created_at, updated_at
+                """,
+                values,
+            )
+            row = cur.fetchone()
+        conn.commit()
+        return dict(row)
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def update_model_config(*, model_id: str, **values: Any) -> Optional[Dict[str, Any]]:
+    conn = _get_connection()
+    if conn is None:
+        raise RuntimeError("Database unavailable")
+
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE model_configs
+                SET model_key = %(model_key)s,
+                    display_name = %(display_name)s,
+                    model_type = %(model_type)s,
+                    provider = %(provider)s,
+                    model_name = %(model_name)s,
+                    endpoint = %(endpoint)s,
+                    dimension = %(dimension)s,
+                    enabled = %(enabled)s,
+                    notes = %(notes)s,
+                    updated_at = now()
+                WHERE id = %(model_id)s
+                RETURNING id, model_key, display_name, model_type, provider, model_name,
+                          endpoint, dimension, enabled, notes, created_at, updated_at
+                """,
+                {**values, "model_id": model_id},
+            )
+            row = cur.fetchone()
+        conn.commit()
+        return dict(row) if row else None
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def delete_model_config(*, model_id: str) -> bool:
+    conn = _get_connection()
+    if conn is None:
+        raise RuntimeError("Database unavailable")
+
+    try:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM model_configs WHERE id = %s", (model_id,))
+            deleted = cur.rowcount > 0
+        conn.commit()
+        return deleted
+    except Exception:
+        conn.rollback()
+        raise
     finally:
         conn.close()

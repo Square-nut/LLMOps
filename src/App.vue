@@ -14,6 +14,7 @@ function pageTitle() {
   if (route.name === 'logs') return '使用日志'
   if (route.name === 'status') return '系统状态'
   if (route.name === 'settings') return '运行配置'
+  if (route.name === 'models') return '模型管理'
   return 'LLMOps'
 }
 
@@ -109,6 +110,14 @@ function onDeleteConversation(e: Event, id: string) {
               <circle cx="11" cy="18" r="1.5" />
             </svg>
             运行配置
+          </RouterLink>
+          <RouterLink to="/models" class="nav-item" active-class="active">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <rect x="3" y="5" width="18" height="5" rx="1" />
+              <rect x="3" y="14" width="18" height="5" rx="1" />
+              <path d="M7 7.5h.01M7 16.5h.01M11 7.5h6M11 16.5h6" />
+            </svg>
+            模型管理
           </RouterLink>
         </nav>
         <div class="sidebar-footer">

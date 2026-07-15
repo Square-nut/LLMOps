@@ -1,6 +1,6 @@
 import asyncio
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -24,7 +24,7 @@ class XinferenceEmbedding(BaseEmbedding):
     api_key: str = "xinference"
     timeout: float = 60.0
 
-    def _embed(self, inputs: str | List[str]) -> List[List[float]]:
+    def _embed(self, inputs: Union[str, List[str]]) -> List[List[float]]:
         payload = json.dumps({"model": self.model_name, "input": inputs}).encode(
             "utf-8"
         )

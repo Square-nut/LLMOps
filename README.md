@@ -7,6 +7,8 @@ Minimal LLM + RAG application (FastAPI backend + Vue frontend).
 
 ## 快速启动（本地开发）
 
+前置条件：Node.js `22.18+`（Vite 8 要求 Node 20.19+；项目统一使用 Node 22）和 Docker Desktop。
+
 ```sh
 python -m venv .venv
 source .venv/bin/activate
@@ -35,14 +37,17 @@ uvicorn app.main:app --reload --port 8000
 ### 一键启动（推荐）
 
 ```sh
-# 全栈：需先打开 Docker Desktop
+# macOS / Linux 全栈：需先打开 Docker Desktop；Embedding 可连接 WinPC Xinference
 npm start
+
+# Windows（本机 WSL2 同时运行 Xinference）
+npm run start:win
 
 # 仅 API + 前端（数据库已起，或暂不需要落库）
 npm run start:app
 ```
 
-`npm start` 失败并提示 `docker.sock` → Docker Desktop 没开，先启动 Docker 再重试，或用 `npm run start:app`。
+`npm start` 失败并提示 `docker.sock` → Docker Desktop 没开，先启动 Docker 再重试，或用 `npm run start:app`。`npm start` 不依赖 WSL；只有 Windows 主机需要同时拉起 Xinference 时才使用 `npm run start:win`。
 
 ### 分步启动
 

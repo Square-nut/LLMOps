@@ -137,8 +137,10 @@ launched again before RAG queries can embed their input.
 - RAG restores the complete persisted LlamaIndex state (`docstore.json`,
   `index_store.json`, and the FAISS vector store), rather than trying to
   initialize from FAISS alone.
-- `npm start` starts PostgreSQL, Xinference, FastAPI, and Vue; the BGE model
-  itself must be launched after Xinference if its model list is empty.
+- On macOS/Linux, `npm start` starts PostgreSQL, FastAPI, and Vue and connects
+  to the WinPC Xinference endpoint configured in `.env`. On the Windows model
+  host, `npm run start:win` also starts WSL2 Xinference; the BGE model itself
+  must be launched after Xinference if its model list is empty.
 - Local Chat is not the default yet. The planned first candidate is a Qwen
   7B GGUF Q4 model served by Xinference; it can coexist with BGE if context
   length and GPU memory are kept under control.
@@ -560,7 +562,23 @@ The Status page (`/status`) is the **single pane of glass** for daily operations
 
 ---
 
-## 16. MVP Milestones
+## 16. Model Catalogue
+
+The LLMOps `/models` page is the editable product-side catalogue for chat,
+embedding, and vision models. It stores a stable model key, display name,
+runtime/provider, model name, optional endpoint and embedding dimension,
+enabled state, and notes in PostgreSQL.
+
+- The catalogue intentionally stores no API keys or other secrets.
+- It does not start, stop, or load model weights; Xinference remains the model
+  runtime and administration surface.
+- Current `.env` routing remains authoritative for active chat and embedding
+  traffic. A later activation workflow can select a catalogue entry and update
+  the runtime configuration with validation and reindex safeguards.
+
+---
+
+## 17. MVP Milestones
 
 | Phase | Content | Status |
 |-------|---------|--------|
@@ -570,7 +588,8 @@ The Status page (`/status`) is the **single pane of glass** for daily operations
 | Phase 4 | Frontend (Chat / Ingest / Status / Logs) | ✅ Done |
 | Phase 5 | Mock RAG/Chat for offline dev | ✅ Done |
 | Phase 6 | HuggingFace local embedding config + remote adapter | ✅ Done (config) |
-| Phase 7 | Win PC Xinference deploy + end-to-end local embedding | 🔲 Pending |
+| Phase 7 | Win PC Xinference deploy + end-to-end local embedding | ✅ Done |
+| Phase 7a | Editable model catalogue (PostgreSQL CRUD + Vue page) | ✅ Done |
 | Phase 8 | Status page model service dashboard (`model_services`) | 🔲 Planned |
 | Phase 9 | Vision module (YOLO + zone check + page) | 🔲 Planned |
 | Phase 10 (optional) | LiteLLM multi-provider gateway | 🔲 Deferred |
@@ -578,13 +597,14 @@ The Status page (`/status`) is the **single pane of glass** for daily operations
 
 ---
 
-## 17. Success Criteria
+## 18. Success Criteria
 
 ### Updated Progress
 
 - Phase 6 local embedding adapter: complete.
 - Phase 7 WSL2 Xinference + BGE end-to-end: complete.
-- Windows one-command development startup: complete via `npm start`.
+- macOS/Linux one-command development startup: complete via `npm start`.
+- Windows model-host startup (including WSL2 Xinference): `npm run start:win`.
 - Local Chat through Xinference: optional next step; Qwen 7B GGUF Q4 is the
   target for the RTX 3060 12GB.
 

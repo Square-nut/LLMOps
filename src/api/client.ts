@@ -174,6 +174,26 @@ export interface LogsResponse {
   ingest_logs: IngestLogItem[]
 }
 
+export type ModelType = 'chat' | 'embedding' | 'vision'
+
+export interface ModelConfigInput {
+  model_key: string
+  display_name: string
+  model_type: ModelType
+  provider: string
+  model_name: string
+  endpoint?: string | null
+  dimension?: number | null
+  enabled: boolean
+  notes: string
+}
+
+export interface ModelConfig extends ModelConfigInput {
+  id: string
+  created_at: string
+  updated_at: string
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -183,6 +203,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     const text = await res.text()
     throw new Error(text || `HTTP ${res.status}`)
   }
+  if (res.status === 204) return undefined as T
   return res.json() as Promise<T>
 }
 
@@ -226,4 +247,20 @@ export function postModelCheck() {
 
 export function postEmbeddingCheck() {
   return request<EmbeddingCheckResponse>('/api/rag/embedding-check', { method: 'POST' })
+}
+
+export function getModels() {
+  return request<ModelConfig[]>('/api/models')
+}
+
+export function createModel(body: ModelConfigInput) {
+  return request<ModelConfig>('/api/models', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function updateModel(id: string, body: ModelConfigInput) {
+  return request<ModelConfig>(`/api/models/${id}`, { method: 'PUT', body: JSON.stringify(body) })
+}
+
+export function deleteModel(id: string) {
+  return request<void>(`/api/models/${id}`, { method: 'DELETE' })
 }

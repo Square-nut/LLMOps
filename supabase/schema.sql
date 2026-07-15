@@ -30,9 +30,27 @@ create table if not exists chunks (
     created_at timestamptz default now()
 );
 
+-- Product-side model catalogue. This stores non-secret connection metadata only;
+-- Xinference remains responsible for loading and managing model processes.
+create table if not exists model_configs (
+    id uuid primary key default gen_random_uuid(),
+    model_key text not null unique,
+    display_name text not null,
+    model_type text not null check (model_type in ('chat', 'embedding', 'vision')),
+    provider text not null,
+    model_name text not null,
+    endpoint text,
+    dimension integer check (dimension is null or dimension > 0),
+    enabled boolean not null default true,
+    notes text not null default '',
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
+);
+
 create index if not exists idx_llm_logs_created_at on llm_logs(created_at desc);
 create index if not exists idx_chunks_document_id on chunks(document_id);
 create index if not exists idx_documents_created_at on documents(created_at desc);
+create index if not exists idx_model_configs_type on model_configs(model_type);
 
 -- 已有库升级（可单独执行）
 alter table llm_logs add column if not exists prompt_tokens integer default 0;
