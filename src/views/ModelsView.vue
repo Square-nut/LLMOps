@@ -3,15 +3,24 @@ import { onMounted, reactive, ref, watch } from 'vue'
 import {
   activateModel,
   createModel,
+  deployModel,
   deleteModel,
+  getXinferenceRegistrations,
+  getXinferenceCached,
+  getXinferenceRunning,
   getModels,
+  queryXinferenceCatalog,
+  terminateModel,
   updateModel,
   type ModelConfig,
   type ModelConfigInput,
   type ModelType,
 } from '@/api/client'
 
-type FormState = Omit<ModelConfigInput, 'dimension'> & { dimension: string }
+type FormState = Omit<ModelConfigInput, 'dimension' | 'runtime_config'> & {
+  dimension: string
+  runtime_config_json: string
+}
 
 function emptyForm(): FormState {
   return {
@@ -24,6 +33,7 @@ function emptyForm(): FormState {
     dimension: '',
     enabled: true,
     notes: '',
+    runtime_config_json: '{}',
   }
 }
 
@@ -35,10 +45,36 @@ const error = ref('')
 const activationMessage = ref('')
 const editingId = ref<string | null>(null)
 const form = reactive<FormState>(emptyForm())
+const runtimeEndpoint = ref('')
+const runtimeType = ref<'LLM' | 'embedding'>('embedding')
+const runtimeModels = ref<Array<Record<string, unknown>>>([])
+const runningModels = ref<Array<Record<string, unknown>>>([])
+const cachedModels = ref<Array<Record<string, unknown>>>([])
+const runtimeLoading = ref(false)
+const deployingId = ref<string | null>(null)
+const formOpen = ref(false)
+const catalogItems = ref<Array<{
+  model_name: string
+  model_type: string
+  downloaded: boolean
+  running: boolean
+  parameters: Record<string, unknown>
+}>>([])
+const catalogTotal = ref(0)
+const catalogPage = ref(1)
+const catalogPageSize = 10
+const catalogNameQuery = ref('')
+const catalogParamQuery = ref('')
+const catalogDownloaded = ref<'all' | 'yes' | 'no'>('all')
 
 function resetForm() {
   Object.assign(form, emptyForm())
   editingId.value = null
+}
+
+function closeForm() {
+  resetForm()
+  formOpen.value = false
 }
 
 function typeLabel(type: ModelType) {
@@ -114,6 +150,103 @@ async function load() {
   }
 }
 
+function runtimeModelName(item: Record<string, unknown>) {
+  return String(item.model_name || item.model_uid || item.id || '-')
+}
+
+function runningFor(item: ModelConfig) {
+  return runningModels.value.find(
+    (runtime) => runtime.model_name === item.model_name || runtime.id === item.model_name,
+  )
+}
+
+async function refreshRuntime() {
+  runtimeLoading.value = true
+  error.value = ''
+  try {
+    const [registrations, running, cached] = await Promise.all([
+      getXinferenceRegistrations(runtimeType.value, runtimeEndpoint.value || undefined),
+      getXinferenceRunning(runtimeEndpoint.value || undefined),
+      getXinferenceCached(runtimeEndpoint.value || undefined),
+    ])
+    runtimeModels.value = registrations.models
+    runningModels.value = running.models
+    cachedModels.value = cached.models
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : '无法读取 Xinference 模型状态'
+  } finally {
+    runtimeLoading.value = false
+  }
+}
+
+async function queryCatalog() {
+  runtimeLoading.value = true
+  error.value = ''
+  try {
+    const result = await queryXinferenceCatalog({
+      modelType: runtimeType.value,
+      query: catalogNameQuery.value,
+      paramQuery: catalogParamQuery.value,
+      downloaded: catalogDownloaded.value,
+      page: catalogPage.value,
+      pageSize: catalogPageSize,
+      endpoint: runtimeEndpoint.value || undefined,
+    })
+    catalogItems.value = result.items
+    catalogTotal.value = result.total
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : '无法查询 Xinference 模型'
+  } finally {
+    runtimeLoading.value = false
+  }
+}
+
+function changeCatalogFilter() {
+  catalogPage.value = 1
+  void queryCatalog()
+}
+
+function openCreate() {
+  resetForm()
+  formOpen.value = true
+}
+
+async function deploy(item: ModelConfig) {
+  deployingId.value = item.id
+  error.value = ''
+  try {
+    await deployModel(item.id, {
+      endpoint: runtimeEndpoint.value || item.endpoint,
+      model_engine: item.model_type === 'embedding' ? 'sentence_transformers' : undefined,
+      model_format: item.model_type === 'embedding' ? 'pytorch' : undefined,
+      download_hub: 'modelscope',
+      gpu_idx: [0],
+      n_gpu: 'auto',
+      enable_virtual_env: false,
+      ...(item.runtime_config || {}),
+    })
+    activationMessage.value = `${item.display_name} 已提交给 Xinference 部署/下载`
+    await refreshRuntime()
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : '模型部署失败'
+  } finally {
+    deployingId.value = null
+  }
+}
+
+async function stopRuntime(item: ModelConfig) {
+  const runtime = runningFor(item)
+  const uid = runtime && String(runtime.id || runtime.model_uid || item.model_name)
+  if (!uid || !confirm(`停止 Xinference 模型「${item.display_name}」？`)) return
+  try {
+    await terminateModel(item.id, uid)
+    activationMessage.value = `${item.display_name} 已停止`
+    await refreshRuntime()
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : '停止模型失败'
+  }
+}
+
 async function activate(item: ModelConfig) {
   const action = item.model_type === 'embedding' ? '切换后必须重建本机 FAISS 索引。仍要继续吗？' : '后续新对话将使用该模型。仍要继续吗？'
   if (!confirm(`设「${item.display_name}」为当前${typeLabel(item.model_type)}模型？${action}`)) return
@@ -133,6 +266,7 @@ async function activate(item: ModelConfig) {
 }
 
 function edit(item: ModelConfig) {
+  formOpen.value = true
   editingId.value = item.id
   Object.assign(form, {
     model_key: item.model_key,
@@ -144,6 +278,7 @@ function edit(item: ModelConfig) {
     dimension: item.dimension?.toString() || '',
     enabled: item.enabled,
     notes: item.notes,
+    runtime_config_json: JSON.stringify(item.runtime_config || {}, null, 2),
   })
   error.value = ''
 }
@@ -166,6 +301,17 @@ async function save() {
     enabled: form.enabled,
     notes: form.notes.trim(),
   }
+  try {
+    payload.runtime_config = form.runtime_config_json.trim()
+      ? JSON.parse(form.runtime_config_json)
+      : {}
+    if (!payload.runtime_config || Array.isArray(payload.runtime_config) || typeof payload.runtime_config !== 'object') {
+      throw new Error('Xinference 参数必须是 JSON 对象')
+    }
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : 'Xinference 参数 JSON 格式错误'
+    return
+  }
   if (!payload.model_key || !payload.display_name || !payload.provider || !payload.model_name) {
     error.value = '请填写模型标识、显示名称、运行时和模型名称'
     return
@@ -184,6 +330,7 @@ async function save() {
       await createModel(payload)
     }
     resetForm()
+    formOpen.value = false
     await load()
   } catch (e) {
     error.value = e instanceof Error ? e.message : '保存失败'
@@ -204,7 +351,10 @@ async function remove(item: ModelConfig) {
   }
 }
 
-onMounted(load)
+onMounted(async () => {
+  await load()
+  await Promise.all([refreshRuntime(), queryCatalog()])
+})
 </script>
 
 <template>
@@ -214,7 +364,75 @@ onMounted(load)
       <button type="button" class="refresh-btn" :disabled="loading" @click="load">
         {{ loading ? '刷新中…' : '刷新列表' }}
       </button>
+      <button type="button" class="save-btn" @click="openCreate">新增模型</button>
     </div>
+
+    <section class="runtime-card">
+      <div class="runtime-head">
+        <div>
+          <h2>Xinference 运行时</h2>
+          <p>查询可用模型，并从模型目录提交下载和启动任务。</p>
+        </div>
+        <button type="button" class="refresh-btn" :disabled="runtimeLoading" @click="refreshRuntime">
+          {{ runtimeLoading ? '查询中…' : '刷新运行时' }}
+        </button>
+      </div>
+      <div class="runtime-controls">
+        <label>
+          <span>Xinference API</span>
+          <input v-model="runtimeEndpoint" placeholder="http://172.22.39.118:9997/v1" />
+        </label>
+        <label>
+          <span>模型类型</span>
+          <select v-model="runtimeType" @change="changeCatalogFilter">
+            <option value="embedding">Embedding</option>
+            <option value="LLM">LLM / Chat</option>
+          </select>
+        </label>
+      </div>
+      <div class="runtime-filters">
+        <input v-model="catalogNameQuery" placeholder="按模型名称查询" @keyup.enter="changeCatalogFilter" />
+        <input v-model="catalogParamQuery" placeholder="按参数查询，如 transformers / Q4 / 768" @keyup.enter="changeCatalogFilter" />
+        <select v-model="catalogDownloaded" @change="changeCatalogFilter">
+          <option value="all">全部状态</option>
+          <option value="yes">已下载</option>
+          <option value="no">未下载</option>
+        </select>
+        <button type="button" class="refresh-btn" @click="changeCatalogFilter">查询</button>
+      </div>
+      <div class="runtime-table-wrap">
+        <table class="runtime-table">
+          <thead>
+            <tr><th>模型名称</th><th>下载状态</th><th>运行状态</th><th>参数摘要</th></tr>
+          </thead>
+          <tbody>
+            <tr v-if="!runtimeLoading && !catalogItems.length"><td colspan="4" class="runtime-empty">暂无匹配模型</td></tr>
+            <tr v-for="item in catalogItems" :key="item.model_name">
+              <td class="mono">{{ item.model_name }}</td>
+              <td><span :class="item.downloaded ? 'state enabled' : 'state disabled'">{{ item.downloaded ? '已下载' : '未下载' }}</span></td>
+              <td><span :class="item.running ? 'state current' : 'state disabled'">{{ item.running ? '运行中' : '未运行' }}</span></td>
+              <td class="param-cell" :title="JSON.stringify(item.parameters)">{{ JSON.stringify(item.parameters) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="pagination">
+        <span>共 {{ catalogTotal }} 个模型</span>
+        <button type="button" :disabled="catalogPage <= 1" @click="catalogPage--; queryCatalog()">上一页</button>
+        <span>第 {{ catalogPage }} / {{ Math.max(1, Math.ceil(catalogTotal / catalogPageSize)) }} 页</span>
+        <button type="button" :disabled="catalogPage >= Math.max(1, Math.ceil(catalogTotal / catalogPageSize))" @click="catalogPage++; queryCatalog()">下一页</button>
+      </div>
+      <div v-if="runningModels.length" class="running-line">
+        运行中：<span v-for="item in runningModels" :key="String(item.id || item.model_uid)">{{ runtimeModelName(item) }}</span>
+      </div>
+      <div class="cached-line">
+        已下载缓存：
+        <span v-if="!cachedModels.length">暂无</span>
+        <span v-for="item in cachedModels" :key="String(item.model_name || item.model_version)">
+          {{ String(item.model_name || item.model_version || item.model_path || '-') }}
+        </span>
+      </div>
+    </section>
 
     <p v-if="error" class="error">{{ error }}</p>
     <p v-if="activationMessage" class="success">{{ activationMessage }}</p>
@@ -263,6 +481,23 @@ onMounted(load)
                   {{ item.is_active ? '当前使用' : activatingId === item.id ? '切换中…' : '设为当前' }}
                 </button>
                 <button type="button" @click="edit(item)">编辑</button>
+                <button
+                  v-if="item.provider === 'xinference' && !runningFor(item)"
+                  type="button"
+                  class="activate"
+                  :disabled="deployingId === item.id"
+                  @click="deploy(item)"
+                >
+                  {{ deployingId === item.id ? '部署中…' : '部署到 Xinference' }}
+                </button>
+                <button
+                  v-if="item.provider === 'xinference' && runningFor(item)"
+                  type="button"
+                  class="danger"
+                  @click="stopRuntime(item)"
+                >
+                  停止运行
+                </button>
                 <button type="button" class="danger" @click="remove(item)">删除</button>
               </td>
             </tr>
@@ -270,10 +505,10 @@ onMounted(load)
         </table>
       </section>
 
-      <section class="form-card">
+      <section v-if="formOpen" class="form-card modal-card">
         <div class="form-title">
           <h2>{{ editingId ? '编辑模型' : '新增模型' }}</h2>
-          <button v-if="editingId" type="button" class="text-btn" @click="resetForm">取消编辑</button>
+          <button v-if="editingId" type="button" class="text-btn" @click="closeForm">取消编辑</button>
         </div>
         <form @submit.prevent="save">
           <label>
@@ -324,6 +559,15 @@ onMounted(load)
             <span>备注</span>
             <textarea v-model="form.notes" rows="3" placeholder="用途、显存需求或部署说明" />
           </label>
+          <label v-if="form.provider === 'xinference'">
+            <span>Xinference 启动参数（JSON）</span>
+            <textarea
+              v-model="form.runtime_config_json"
+              rows="5"
+              placeholder='{"model_engine":"sentence_transformers","model_format":"pytorch","download_hub":"modelscope","gpu_idx":[0]}'
+            />
+            <small>参数会保存到 PostgreSQL，下次部署直接复用。</small>
+          </label>
           <label class="toggle">
             <input v-model="form.enabled" type="checkbox" />
             <span>在模型目录中启用</span>
@@ -341,6 +585,26 @@ onMounted(load)
 .models-page { flex: 1; overflow-y: auto; padding: 1.5rem 2rem 2rem; }
 .intro { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1.25rem; color: #6e6e80; font-size: .875rem; }
 .intro p { margin: 0; max-width: 48rem; line-height: 1.5; }
+.runtime-card { margin-bottom: 1.25rem; padding: 1rem 1.25rem; border: 1px solid var(--border); border-radius: .75rem; background: var(--main-bg); }
+.runtime-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.runtime-head h2 { margin: 0; font-size: 1rem; }
+.runtime-head p { margin: .35rem 0 0; color: #6e6e80; font-size: .8125rem; }
+.runtime-controls { display: grid; grid-template-columns: minmax(0, 1fr) 12rem; gap: .75rem; margin-top: .9rem; }
+.runtime-filters { display: grid; grid-template-columns: 1fr 1.3fr 10rem auto; gap: .5rem; margin-top: .8rem; }
+.runtime-table-wrap { overflow-x: auto; margin-top: .8rem; border: 1px solid var(--border); border-radius: .5rem; }
+.runtime-table { min-width: 760px; }
+.runtime-table th, .runtime-table td { padding: .55rem .7rem; }
+.param-cell { max-width: 30rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #6e6e80; }
+.pagination { display: flex; align-items: center; justify-content: flex-end; gap: .65rem; margin-top: .7rem; color: #6e6e80; font-size: .75rem; }
+.pagination button { border: 1px solid var(--border); border-radius: .4rem; background: var(--main-bg); padding: .3rem .55rem; cursor: pointer; }
+.pagination button:disabled { cursor: default; opacity: .5; }
+.runtime-list { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .8rem; }
+.runtime-chip { padding: .25rem .5rem; border-radius: 99px; background: rgba(84, 54, 218, .1); color: #5436da; font: .75rem ui-monospace, SFMono-Regular, Menlo, monospace; }
+.runtime-empty { color: #8e8e8e; font-size: .8125rem; }
+.running-line { margin-top: .7rem; color: #08775a; font-size: .8125rem; }
+.running-line span { margin-left: .5rem; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.cached-line { margin-top: .55rem; color: #6e6e80; font-size: .8125rem; }
+.cached-line span { display: inline-block; margin-left: .5rem; color: #5436da; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .refresh-btn, .actions button { border: 1px solid var(--border); background: var(--main-bg); border-radius: .5rem; padding: .45rem .75rem; cursor: pointer; white-space: nowrap; }
 .refresh-btn:disabled, .save-btn:disabled { cursor: not-allowed; opacity: .55; }
 .content-grid { display: grid; grid-template-columns: minmax(0, 1fr) 22rem; gap: 1.25rem; align-items: start; }
@@ -366,6 +630,7 @@ tr:hover td { background: rgba(0, 0, 0, .02); }
 .actions .activate:disabled { cursor: default; opacity: .6; }
 .empty { text-align: center; color: #8e8e8e; padding: 2rem !important; }
 .form-card { padding: 1.25rem; }
+.modal-card { position: fixed; z-index: 20; top: 8vh; right: 5vw; width: min(34rem, 90vw); max-height: 84vh; overflow-y: auto; box-shadow: 0 1rem 3rem rgba(0, 0, 0, .2); }
 .form-title { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
 .form-title h2 { margin: 0; font-size: 1rem; }
 .text-btn { border: 0; background: transparent; color: #6e6e80; cursor: pointer; }

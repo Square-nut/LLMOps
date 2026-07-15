@@ -44,6 +44,7 @@ create table if not exists model_configs (
     enabled boolean not null default true,
     is_active boolean not null default false,
     notes text not null default '',
+    runtime_config jsonb not null default '{}'::jsonb,
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now()
 );
@@ -59,3 +60,4 @@ create unique index if not exists idx_model_configs_one_active_per_type
 alter table llm_logs add column if not exists prompt_tokens integer default 0;
 alter table llm_logs add column if not exists completion_tokens integer default 0;
 alter table model_configs add column if not exists is_active boolean not null default false;
+alter table model_configs add column if not exists runtime_config jsonb not null default '{}'::jsonb;

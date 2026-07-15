@@ -186,6 +186,7 @@ export interface ModelConfigInput {
   dimension?: number | null
   enabled: boolean
   notes: string
+  runtime_config?: Record<string, unknown>
 }
 
 export interface ModelConfig extends ModelConfigInput {
@@ -199,6 +200,43 @@ export interface ModelActivationResponse {
   model: ModelConfig
   requires_reindex: boolean
   message: string
+}
+
+export interface XinferenceRuntimeResponse {
+  models: Array<Record<string, unknown>>
+}
+
+export interface XinferenceCatalogItem {
+  model_name: string
+  model_type: string
+  downloaded: boolean
+  running: boolean
+  parameters: Record<string, unknown>
+}
+
+export interface XinferenceCatalogResponse {
+  items: XinferenceCatalogItem[]
+  total: number
+  page: number
+  page_size: number
+}
+
+export interface XinferenceLaunchInput {
+  endpoint?: string | null
+  model_engine?: string | null
+  model_format?: string | null
+  quantization?: string | null
+  size?: string | null
+  download_hub?: string | null
+  gpu_idx?: number[]
+  n_gpu?: string | null
+  enable_virtual_env?: boolean
+  model_uid?: string | null
+}
+
+export interface XinferenceDeployResponse {
+  model: ModelConfig
+  runtime: Record<string, unknown>
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
@@ -274,4 +312,54 @@ export function deleteModel(id: string) {
 
 export function activateModel(id: string) {
   return request<ModelActivationResponse>(`/api/models/${id}/activate`, { method: 'POST' })
+}
+
+export function getXinferenceRegistrations(modelType: 'LLM' | 'embedding' | 'rerank', endpoint?: string) {
+  const query = new URLSearchParams({ model_type: modelType })
+  if (endpoint) query.set('endpoint', endpoint)
+  return request<XinferenceRuntimeResponse>(`/api/models/runtime/registrations?${query}`)
+}
+
+export function queryXinferenceCatalog(
+  params: {
+    modelType: 'LLM' | 'embedding' | 'rerank'
+    query?: string
+    paramQuery?: string
+    downloaded?: 'all' | 'yes' | 'no'
+    page?: number
+    pageSize?: number
+    endpoint?: string
+  },
+) {
+  const query = new URLSearchParams({ model_type: params.modelType })
+  if (params.query) query.set('q', params.query)
+  if (params.paramQuery) query.set('param_q', params.paramQuery)
+  if (params.downloaded === 'yes') query.set('downloaded', 'true')
+  if (params.downloaded === 'no') query.set('downloaded', 'false')
+  query.set('page', String(params.page || 1))
+  query.set('page_size', String(params.pageSize || 20))
+  if (params.endpoint) query.set('endpoint', params.endpoint)
+  return request<XinferenceCatalogResponse>(`/api/models/runtime/catalog?${query}`)
+}
+
+export function getXinferenceRunning(endpoint?: string) {
+  const query = endpoint ? `?endpoint=${encodeURIComponent(endpoint)}` : ''
+  return request<XinferenceRuntimeResponse>(`/api/models/runtime/running${query}`)
+}
+
+export function getXinferenceCached(endpoint?: string) {
+  const query = endpoint ? `?endpoint=${encodeURIComponent(endpoint)}` : ''
+  return request<XinferenceRuntimeResponse>(`/api/models/runtime/cached${query}`)
+}
+
+export function deployModel(id: string, body: XinferenceLaunchInput) {
+  return request<XinferenceDeployResponse>(`/api/models/${id}/deploy`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export function terminateModel(id: string, modelUid?: string) {
+  const query = modelUid ? `?model_uid=${encodeURIComponent(modelUid)}` : ''
+  return request<void>(`/api/models/${id}/deploy${query}`, { method: 'DELETE' })
 }

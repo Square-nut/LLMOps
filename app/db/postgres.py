@@ -2,7 +2,7 @@ from typing import Any, Dict, List, Optional
 
 import psycopg2
 from psycopg2 import OperationalError
-from psycopg2.extras import RealDictCursor, execute_values
+from psycopg2.extras import Json, RealDictCursor, execute_values
 
 from app.core.config import settings
 from app.core.logger import logger
@@ -41,12 +41,14 @@ def ensure_schema() -> None:
             enabled boolean not null default true,
             is_active boolean not null default false,
             notes text not null default '',
+            runtime_config jsonb not null default '{}'::jsonb,
             created_at timestamptz not null default now(),
             updated_at timestamptz not null default now()
         )
         """,
         "create index if not exists idx_model_configs_type on model_configs(model_type)",
         "alter table model_configs add column if not exists is_active boolean not null default false",
+        "alter table model_configs add column if not exists runtime_config jsonb not null default '{}'::jsonb",
         """
         create unique index if not exists idx_model_configs_one_active_per_type
         on model_configs(model_type) where is_active
@@ -332,7 +334,7 @@ def list_model_configs() -> List[Dict[str, Any]]:
             cur.execute(
                 """
                 SELECT id, model_key, display_name, model_type, provider, model_name,
-                       endpoint, dimension, enabled, is_active, notes, created_at, updated_at
+                       endpoint, dimension, enabled, is_active, notes, runtime_config, created_at, updated_at
                 FROM model_configs
                 ORDER BY model_type, display_name
                 """
@@ -354,14 +356,14 @@ def create_model_config(**values: Any) -> Dict[str, Any]:
                 """
                 INSERT INTO model_configs
                     (model_key, display_name, model_type, provider, model_name,
-                     endpoint, dimension, enabled, notes)
+                     endpoint, dimension, enabled, notes, runtime_config)
                 VALUES
-                    (%(model_key)s, %(display_name)s, %(model_type)s, %(provider)s,
-                     %(model_name)s, %(endpoint)s, %(dimension)s, %(enabled)s, %(notes)s)
+                     (%(model_key)s, %(display_name)s, %(model_type)s, %(provider)s,
+                     %(model_name)s, %(endpoint)s, %(dimension)s, %(enabled)s, %(notes)s, %(runtime_config)s)
                 RETURNING id, model_key, display_name, model_type, provider, model_name,
-                          endpoint, dimension, enabled, is_active, notes, created_at, updated_at
+                          endpoint, dimension, enabled, is_active, notes, runtime_config, created_at, updated_at
                 """,
-                values,
+                {**values, "runtime_config": Json(values.get("runtime_config") or {})},
             )
             row = cur.fetchone()
         conn.commit()
@@ -399,12 +401,13 @@ def update_model_config(*, model_id: str, **values: Any) -> Optional[Dict[str, A
                     dimension = %(dimension)s,
                     enabled = %(enabled)s,
                     notes = %(notes)s,
+                    runtime_config = %(runtime_config)s,
                     updated_at = now()
                 WHERE id = %(model_id)s
                 RETURNING id, model_key, display_name, model_type, provider, model_name,
-                          endpoint, dimension, enabled, is_active, notes, created_at, updated_at
+                          endpoint, dimension, enabled, is_active, notes, runtime_config, created_at, updated_at
                 """,
-                {**values, "model_id": model_id},
+                {**values, "runtime_config": Json(values.get("runtime_config") or {}), "model_id": model_id},
             )
             row = cur.fetchone()
         conn.commit()
@@ -447,7 +450,7 @@ def get_active_model_config(model_type: str) -> Optional[Dict[str, Any]]:
             cur.execute(
                 """
                 SELECT id, model_key, display_name, model_type, provider, model_name,
-                       endpoint, dimension, enabled, is_active, notes, created_at, updated_at
+                       endpoint, dimension, enabled, is_active, notes, runtime_config, created_at, updated_at
                 FROM model_configs
                 WHERE model_type = %s AND is_active = true
                 """,
@@ -469,7 +472,7 @@ def get_model_config(model_id: str) -> Optional[Dict[str, Any]]:
             cur.execute(
                 """
                 SELECT id, model_key, display_name, model_type, provider, model_name,
-                       endpoint, dimension, enabled, is_active, notes, created_at, updated_at
+                       endpoint, dimension, enabled, is_active, notes, runtime_config, created_at, updated_at
                 FROM model_configs
                 WHERE id = %s
                 """,
@@ -514,7 +517,7 @@ def activate_model_config(*, model_id: str) -> Optional[Dict[str, Any]]:
                 SET is_active = true, updated_at = now()
                 WHERE id = %s
                 RETURNING id, model_key, display_name, model_type, provider, model_name,
-                          endpoint, dimension, enabled, is_active, notes, created_at, updated_at
+                          endpoint, dimension, enabled, is_active, notes, runtime_config, created_at, updated_at
                 """,
                 (model_id,),
             )
