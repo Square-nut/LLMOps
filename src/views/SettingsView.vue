@@ -2,6 +2,8 @@
 import { onMounted, ref } from 'vue'
 import {
   getRuntimeConfig,
+  getModels,
+  activateModel,
   postEmbeddingCheck,
   postModelCheck,
   postReindex,
@@ -9,6 +11,7 @@ import {
   type ModelCheckResponse,
   type ReindexResponse,
   type RuntimeConfigResponse,
+  type ModelConfig,
 } from '@/api/client'
 
 const config = ref<RuntimeConfigResponse | null>(null)
@@ -21,6 +24,10 @@ const loading = ref(false)
 const modelChecking = ref(false)
 const embeddingChecking = ref(false)
 const reindexing = ref(false)
+const models = ref<ModelConfig[]>([])
+const selectedChatModel = ref('')
+const selectedEmbeddingModel = ref('')
+const switchingModel = ref(false)
 
 function yesNo(value: boolean) {
   return value ? '是' : '否'
@@ -39,6 +46,35 @@ async function loadConfig() {
     error.value = e instanceof Error ? e.message : '配置加载失败'
   } finally {
     loading.value = false
+  }
+}
+
+async function loadModels() {
+  try {
+    models.value = await getModels()
+    selectedChatModel.value = models.value.find((item) => item.model_type === 'chat' && item.is_active)?.id || ''
+    selectedEmbeddingModel.value = models.value.find((item) => item.model_type === 'embedding' && item.is_active)?.id || ''
+  } catch (e) {
+    actionError.value = e instanceof Error ? e.message : '模型目录加载失败'
+  }
+}
+
+async function switchModel(modelId: string, modelType: 'chat' | 'embedding') {
+  if (!modelId) return
+  switchingModel.value = true
+  actionError.value = ''
+  try {
+    const result = await activateModel(modelId)
+    if (modelType === 'embedding') {
+      actionError.value = `${result.message} 请执行重建索引。`
+    } else {
+      actionError.value = result.message
+    }
+    await Promise.all([loadConfig(), loadModels()])
+  } catch (e) {
+    actionError.value = e instanceof Error ? e.message : '模型切换失败'
+  } finally {
+    switchingModel.value = false
   }
 }
 
@@ -83,7 +119,9 @@ async function handleReindex() {
   }
 }
 
-onMounted(loadConfig)
+onMounted(async () => {
+  await Promise.all([loadConfig(), loadModels()])
+})
 </script>
 
 <template>
@@ -98,6 +136,37 @@ onMounted(loadConfig)
     <p v-if="error" class="error">{{ error }}</p>
 
     <template v-if="config">
+      <section class="section model-routing-section">
+        <h2>当前模型切换</h2>
+        <div class="switch-grid">
+          <div class="switch-card">
+            <span class="label">Chat 模型</span>
+            <select v-model="selectedChatModel" :disabled="switchingModel">
+              <option value="">请选择 Chat 模型</option>
+              <option v-for="item in models.filter((model) => model.model_type === 'chat')" :key="item.id" :value="item.id">
+                {{ item.display_name }} · {{ item.model_name }}
+              </option>
+            </select>
+            <button type="button" class="primary-btn" :disabled="switchingModel || !selectedChatModel" @click="switchModel(selectedChatModel, 'chat')">
+              切换 Chat
+            </button>
+          </div>
+          <div class="switch-card">
+            <span class="label">Embedding 模型</span>
+            <select v-model="selectedEmbeddingModel" :disabled="switchingModel">
+              <option value="">请选择 Embedding 模型</option>
+              <option v-for="item in models.filter((model) => model.model_type === 'embedding')" :key="item.id" :value="item.id">
+                {{ item.display_name }} · {{ item.model_name }}
+              </option>
+            </select>
+            <button type="button" class="primary-btn" :disabled="switchingModel || !selectedEmbeddingModel" @click="switchModel(selectedEmbeddingModel, 'embedding')">
+              切换 Embedding
+            </button>
+          </div>
+        </div>
+        <p class="hint">Embedding 切换后必须重建 FAISS 索引；Chat 切换立即影响后续新请求。</p>
+      </section>
+
       <section class="section">
         <h2>应用</h2>
         <div class="cards">
@@ -262,6 +331,10 @@ onMounted(loadConfig)
   align-items: center;
   gap: 0.75rem;
 }
+.switch-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.switch-card { display: flex; flex-direction: column; gap: .65rem; padding: 1rem; border: 1px solid var(--border); border-radius: .65rem; background: var(--assistant-bg); }
+.switch-card select { width: 100%; padding: .55rem .65rem; border: 1px solid var(--input-border); border-radius: .45rem; background: var(--input-bg); color: var(--main-text); }
+.model-routing-section .hint { margin-bottom: 0; }
 
 .section {
   margin-top: 1.5rem;
