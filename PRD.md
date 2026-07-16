@@ -1,263 +1,275 @@
 # LLMOps 产品需求文档（PRD）
 
-## 1. 文档信息
-
 | 项目 | 内容 |
 |---|---|
 | 产品名称 | LLMOps 本地知识库与模型运营平台 |
-| 文档版本 | v1.0 |
-| 适用阶段 | MVP → 本地模型运营增强 |
+| 文档版本 | v1.1 |
+| 适用阶段 | MVP 与本地模型运营增强 |
 | 目标用户 | 内部知识库使用者、系统管理员、开发者 |
-| 产品形态 | Vue Web 前端 + FastAPI 后端 + PostgreSQL + FAISS + Xinference |
+| 产品形态 | Web 管理平台 |
 
-## 2. 背景与问题
+## 1. 背景与目标
 
-团队需要一个可在本地运行的知识库问答系统：文档不依赖第三方向量服务，检索使用本地 GPU Embedding；最终回答可以先使用在线 Chat 模型，后续再平滑切换到本地 Chat 模型。
+### 1.1 背景
 
-当前技术基础已具备：
+团队需要在本地运行知识库问答系统：文档通过本地 GPU Embedding 向量化并检索，回答阶段可先使用在线 Chat 模型，后续可切换到本地 Chat 模型。当前已有文档入库、FAISS 检索、RAG 问答、运行状态检查，以及 Xinference 模型查询、缓存、部署和停止等基础能力。
 
-- Windows 运行 Vue、FastAPI 与 Docker PostgreSQL。
-- WSL2 使用 RTX 3060 12GB 运行 Xinference。
-- `bge-base-zh-v1.5` 提供本地 768 维 Embedding。
-- PostgreSQL 保存文档、分块、日志、模型目录与模型启动参数。
-- FAISS 保存向量并支持从完整持久化状态恢复。
-- 模型目录支持 Chat / Embedding 激活与 Xinference 模型部署、停止、缓存查询。
+现阶段的产品任务是将这些能力整合为可由页面完成的稳定流程，减少用户在命令行、环境变量和多个管理页面之间反复切换。
 
-现阶段的产品重点是把这些能力整理为稳定、可理解、可操作的产品流程，而不是让用户在多个命令行和管理页面之间切换。
+### 1.2 产品目标
 
-## 3. 产品目标
+1. 用户可以录入文本或文件，建立可检索的本地知识库。 
+2. 用户可以通过 Chat 页面进行 RAG 问答，并了解是否使用知识库上下文。
+3. 管理员可以维护模型目录，部署、停止并切换 Chat / Embedding 模型。
+4. 管理员可以检查数据库、向量索引、Embedding 和 Chat 服务，并处理可定位的异常。
+5. 模型密钥仅保留在服务端运行环境，不在浏览器或数据库中明文保存。
 
-### 3.1 核心目标
+### 1.3 非目标
 
-1. 用户可上传文本或文件，建立可检索的本地知识库。
-2. 用户可通过 Chat 页面使用 RAG 问答，并知道回答是否使用了知识库上下文。
-3. 管理员可在页面中维护 Chat 与 Embedding 模型，部署/停止 Xinference 模型并切换当前模型。
-4. 管理员可快速发现数据库、向量索引、Embedding、Chat 服务的异常并完成恢复。
-5. 所有模型密钥保留在运行环境中，不通过浏览器或数据库明文保存。
+- 本期不建设通用 Agent 编排、工作流引擎或多租户 SaaS。
+- 本期不替代 Xinference 的模型生态和 GPU 调度能力。
+- 本期不引入 Kubernetes、消息队列或独立向量数据库集群。
+- Vision/YOLO 业务能力不属于当前 PRD 范围。
 
-### 3.2 非目标
+## 2. 用户需求
 
-- 不构建通用工作流引擎、Agent 编排平台或多租户 SaaS。
-- 不替代 Xinference 的完整模型生态与底层 GPU 调度能力。
-- 不在 MVP 中引入 Kubernetes、消息队列或独立向量数据库集群。
-- 不在当前阶段实现 Vision/YOLO 业务页面。
-
-## 4. 用户与权限
-
-| 角色 | 主要任务 | 可用能力 |
+| 用户角色 | 核心诉求 | 典型任务 |
 |---|---|---|
-| 知识库用户 | 问答、上传资料 | Chat、知识库录入、查看基础状态 |
-| 管理员 | 模型与运行配置维护 | 模型管理、模型切换、部署/停止、重建索引、服务检查 |
-| 开发者 | 本地调试与扩展 | 全部页面、API 文档、环境配置 |
+| 知识库用户 | 快速获得基于内部资料的可靠回答 | 上传资料、提问、查看回答是否命中知识库 |
+| 系统管理员 | 不依赖命令行完成日常模型和服务维护 | 检查服务、重建索引、选择模型、部署/停止模型 |
+| 开发者 | 便于本地调试、扩展 Provider 与模型 | 查看状态、调整非敏感运行配置、调用 API |
 
-当前 MVP 默认由内部管理员使用；正式多用户部署前需补充登录、角色控制与审计。
+当前 MVP 默认为内部使用。登录、角色权限和操作审计作为后续增强；在完成前，模型部署、运行配置修改等能力仅应向可信管理员开放。
 
-## 5. 产品架构与部署边界
+## 3. 功能列表
 
-```text
-用户
-  ↓
-Vue 前端（Windows，:5173）
-  ↓
-FastAPI（Windows，:8000）
-  ├── PostgreSQL（Docker，文档/分块/日志/模型目录）
-  ├── FAISS（本地向量索引）
-  ├── 在线 Chat API（默认）
-  └── Xinference（WSL2，:9997）
-        ├── BGE Embedding（当前）
-        └── Qwen 7B GGUF Chat（可选后续）
-```
+| 编号 | 功能 | 用户价值 | 优先级 | 当前状态 |
+|---|---|---|---|---|
+| CHAT-01 | Chat 问答与 RAG 开关 | 可按需基于知识库获得回答 | P0 | 已实现 |
+| CHAT-02 | 回答元数据展示 | 知道模型、耗时、Token、RAG 使用情况 | P1 | 部分实现 |
+| INGEST-01 | 文本录入与向量化 | 建立本地知识库 | P0 | 已实现 |
+| INGEST-02 | 文件录入 | 降低资料导入成本 | P1 | 部分实现 |
+| RAG-01 | 状态检查与索引重建 | 快速发现索引、服务或模型问题 | P0 | 已实现 |
+| CONFIG-01 | 当前 Chat / Embedding 模型切换 | 页面化控制推理与检索模型 | P0 | 已实现 |
+| CONFIG-02 | 非敏感运行配置编辑 | 无需修改 `.env` 即可调整常用参数 | P1 | 待完善 |
+| MODEL-01 | 产品侧模型目录 CRUD | 维护可选模型及运行参数 | P0 | 已实现 |
+| MODEL-02 | Xinference 模型查询与筛选 | 区分可用、已下载、运行中的模型 | P0 | 已实现 |
+| MODEL-03 | 部署与停止 Xinference 模型 | 通过 GUI 管理模型实例 | P0 | 已实现 |
+| MODEL-04 | 下载/加载进度与失败重试 | 清楚了解长任务结果 | P1 | 待实现 |
+| MODEL-05 | 统一模型登记列表与多维筛选 | 快速定位需维护的模型记录 | P0 | 待完善 |
+| MODEL-06 | 模型健康检查 | 区分“实例在运行”和“请求可用” | P1 | 待实现 |
+| LOG-01 | 对话和入库日志 | 问题追溯与运行分析 | P1 | 部分实现 |
+| MONITOR-01 | 监控大屏 | 集中判断系统、模型与 RAG 链路健康度 | P1 | 待实现 |
+| MONITOR-02 | 指标告警 | 在服务或资源异常前提示管理员 | P1 | 待实现 |
 
-### 5.1 服务职责
+## 4. 页面说明
 
-| 服务 | 职责 |
+### 4.1 Chat 页面
+
+| 项目 | 说明 |
 |---|---|
-| LLMOps 前端 | 用户问答、资料录入、状态展示、运行配置、模型管理 |
-| FastAPI | RAG 编排、模型路由、模型目录 CRUD、Xinference API 代理 |
-| PostgreSQL | 文档、分块、聊天日志、模型配置、激活状态、启动参数 |
-| FAISS | 文档向量和相似度检索 |
-| Xinference | 下载、缓存、启动、停止 Embedding / 本地 Chat 模型 |
+| 使用者 | 知识库用户、管理员 |
+| 页面内容 | 问题输入框、发送按钮、RAG 开关、回答列表、模型与耗时信息 |
+| 关键操作 | 发送问题；选择是否启用 RAG |
+| 结果反馈 | 显示回答、是否命中 RAG、模型名、耗时、Token；失败时显示可理解的错误说明 |
 
-## 6. 核心业务流程
+### 4.2 知识库录入页面
 
-### 6.1 文档入库
+| 项目 | 说明 |
+|---|---|
+| 使用者 | 知识库用户、管理员 |
+| 页面内容 | 文本编辑区、文件选择、提交按钮、处理结果 |
+| 关键操作 | 提交文本或允许格式的文件 |
+| 结果反馈 | 返回文档标识、Chunk 数、向量数量、使用的 Embedding 模型及版本 |
 
-1. 用户在“知识库录入”提交文本或文件。
-2. 后端保存原始文档并切分为 Chunk。
-3. 后端调用当前 Embedding 模型生成向量。
-4. 向量写入 FAISS；分块和 Embedding 版本写入 PostgreSQL。
-5. 页面返回文档、分块、向量数量和模型版本。
+### 4.3 系统状态页面
 
-### 6.2 RAG 问答
+| 项目 | 说明 |
+|---|---|
+| 使用者 | 管理员、开发者 |
+| 页面内容 | API、PostgreSQL、FAISS、Chat、Embedding 状态卡片；检查与重建按钮 |
+| 关键操作 | 手动检查 Chat / Embedding；重建 FAISS 索引 |
+| 结果反馈 | 显示服务可用性、模型名称、维度、耗时及明确失败原因 |
 
-1. 用户在 Chat 页面输入问题并选择是否启用 RAG。
-2. 后端使用当前 Embedding 模型将问题向量化。
-3. FAISS 返回 Top-K 相关分块。
-4. 后端把问题、系统提示词和检索上下文提交给当前 Chat 模型。
-5. 页面展示回答、模型名、耗时、Token 与是否使用 RAG。
-6. 后端记录聊天日志。
+### 4.4 运行配置页面
 
-### 6.3 Embedding 模型切换
+| 项目 | 说明 |
+|---|---|
+| 使用者 | 管理员 |
+| 页面内容 | 当前 Chat 模型、当前 Embedding 模型、RAG 状态、非敏感配置项 |
+| 关键操作 | 从模型目录选择并激活 Chat 或 Embedding 模型 |
+| 结果反馈 | 成功后显示当前生效模型；切换 Embedding 时明确提示需要重建索引 |
 
-1. 管理员在“运行配置”选择模型目录中的 Embedding 模型。
-2. 后端将该记录设为激活状态，并更新当前 API 进程中的 Embedding 配置。
-3. 系统提示必须重建 FAISS 索引。
-4. 管理员确认后执行“重建索引”。
-5. 状态页显示新的模型、维度、版本和索引状态。
+### 4.5 模型管理页面
 
-### 6.4 Xinference 模型部署
+| 项目 | 说明 |
+|---|---|
+| 使用者 | 管理员、开发者 |
+| 页面内容 | 模型登记主表、Xinference 运行时列表、筛选器、分页、新增/编辑弹窗 |
+| 主表字段 | 名称、UUID、Code、类型、来源、部署方式、启用状态、运行状态、健康状态、当前使用、更新时间、操作 |
+| 筛选条件 | 名称或 Code、类型（Chat / Embedding / Rerank / Vision）、来源（官方 API / 中转站 / 本地）、部署方式（API / Xinference / Ollama）、启用、运行、健康、当前使用状态 |
+| 新增/编辑字段 | 自动生成且只读的 UUID、名称、唯一 Code、启用开关、备注、类型、来源、部署方式、模型标识、Endpoint、密钥引用、Embedding 维度与本地运行参数 |
+| 关键操作 | 新增、编辑、删除、启用/停用、健康检查、设为当前；本地模型可部署/启动、停止 |
+| 结果反馈 | 明确区分登记、启用、运行、健康、当前使用，以及“已下载缓存”状态；展示 Endpoint、维度和启动参数 |
 
-1. 管理员在“模型管理”查询 Xinference 模型目录。
-2. 按模型名称、参数、已下载/未下载状态筛选并分页浏览。
-3. 管理员新增或编辑产品侧模型记录，保存 Endpoint、维度和 `runtime_config`。
-4. 点击“部署到 Xinference”后，后端调用 Xinference `/v1/models`。
-5. Xinference 下载或复用缓存并启动模型。
-6. 页面刷新后展示已下载、运行中或未运行状态。
+### 4.6 日志页面
 
-## 7. 页面与功能需求
+| 项目 | 说明 |
+|---|---|
+| 使用者 | 管理员、开发者 |
+| 页面内容 | 对话日志、入库日志、模型运行与配置变更日志、时间和模型筛选条件 |
+| 关键操作 | 按时间、请求状态、模型、操作类型查询和定位单次问题 |
+| 结果反馈 | 展示输入摘要、输出摘要、模型、耗时、Token、Chunk 数、操作人/来源和失败原因 |
 
-### 7.1 Chat 页面
+### 4.7 监控大屏
 
-| 编号 | 需求 | 优先级 | 验收标准 |
-|---|---|---|---|
-| CHAT-01 | 输入问题并发送 | P0 | 可获得 Chat 模型回答或明确错误提示 |
-| CHAT-02 | RAG 开关 | P0 | 关闭时不检索；开启时响应标注是否使用 RAG |
-| CHAT-03 | 显示模型、耗时、Token | P1 | 每条回答展示结构化元数据 |
-| CHAT-04 | 在线模型认证失败提示 | P0 | 不显示笼统 500，提示 API Key/服务认证问题 |
+| 项目 | 说明 |
+|---|---|
+| 使用者 | 管理员、开发者 |
+| 页面目标 | 以聚合指标、趋势图、状态卡片和告警列表判断系统整体健康度，不替代日志的单请求排障能力 |
+| 刷新方式 | 页面打开时加载；默认每 30 秒刷新，可手动刷新；异常状态需醒目标记 |
+| 总览指标 | 今日请求数、成功率、在线用户数（具备认证后）、异常数、当前 Chat 模型、当前 Embedding 模型、GPU 显存占用 |
+| RAG 指标 | RAG 开启率、检索命中率、空检索率、平均检索耗时、索引向量数、索引版本与最近重建时间 |
+| 模型指标 | Chat / Embedding 请求量、平均耗时、P95 耗时、Token 用量、失败率、最近健康检查时间和连续失败次数 |
+| 基础设施指标 | FastAPI、PostgreSQL、FAISS、Xinference 状态，GPU 利用率、显存占用和本地模型运行状态 |
+| 知识库指标 | 文档数、Chunk 数、今日入库数、入库成功率、最近入库时间 |
+| 告警列表 | 展示告警级别、对象、触发时间、当前状态、说明和跳转至相关日志的入口 |
 
-### 7.2 知识库录入页面
+## 5. 交互逻辑
 
-| 编号 | 需求 | 优先级 | 验收标准 |
-|---|---|---|---|
-| INGEST-01 | 文本入库 | P0 | 文本写入 PostgreSQL 并生成向量 |
-| INGEST-02 | 文件入库 | P1 | 支持项目允许的文件格式并返回处理结果 |
-| INGEST-03 | 返回 Chunk 数量与版本 | P1 | 用户可确认入库使用的 Embedding 版本 |
+### 5.1 文档入库
 
-### 7.3 系统状态页面
+1. 用户提交文本或文件。
+2. 系统保存原始文档并切分为 Chunk。
+3. 系统调用当前激活的 Embedding 模型生成向量。
+4. 向量写入 FAISS，文档、分块和 Embedding 版本写入 PostgreSQL。
+5. 页面显示处理成功或失败结果；Embedding 不可用时，不写入不完整索引并提示用户检查服务。
 
-| 编号 | 需求 | 优先级 | 验收标准 |
-|---|---|---|---|
-| STATUS-01 | 展示 API、数据库、Embedding、FAISS 状态 | P0 | 服务异常可被识别 |
-| STATUS-02 | 手动检查 Chat 和 Embedding | P0 | 返回模型、维度/回答、耗时或明确失败原因 |
-| STATUS-03 | 重建 FAISS 索引 | P0 | 从 PostgreSQL 文档重新生成向量 |
-| STATUS-04 | 检测模型/维度/版本不匹配 | P1 | 提示必须重建索引 |
+### 5.2 RAG 问答
 
-### 7.4 运行配置页面
+1. 用户输入问题，选择是否启用 RAG。
+2. 启用 RAG 时，系统先以当前 Embedding 模型向量化问题，再从 FAISS 检索 Top-K 分块。
+3. 系统将问题、系统提示词和检索上下文提交给当前 Chat 模型。
+4. 页面显示回答及元数据，后台记录对话日志。
+5. Chat 鉴权失败、Xinference 不可用、索引不存在等场景必须返回面向用户的错误说明，而非原始堆栈或笼统 500。
 
-| 编号 | 需求 | 优先级 | 验收标准 |
-|---|---|---|---|
-| CONFIG-01 | 展示当前运行配置 | P0 | 显示当前 Chat、Embedding、RAG、数据库状态；密钥仅显示是否已配置 |
-| CONFIG-02 | 切换 Chat 模型 | P0 | 从模型目录选择后立即作用于后续对话 |
-| CONFIG-03 | 切换 Embedding 模型 | P0 | 切换后提示并支持重建索引 |
-| CONFIG-04 | GUI 运行参数编辑 | P1 | 参数持久化到数据库运行配置，不直接暴露或覆写密钥 |
+### 5.3 模型切换与索引一致性
 
-### 7.5 模型管理页面
+1. 管理员在运行配置页选择模型目录中的 Chat 或 Embedding 模型。
+2. 系统保存激活状态，并让后续请求使用新模型。
+3. 若切换 Chat 模型，后续对话立即生效。
+4. 若切换 Embedding 模型、维度或 Provider，系统标记索引需要重建并给出入口。
+5. 管理员确认重建后，系统从 PostgreSQL 中的文档重新向量化并更新 FAISS。
 
-| 编号 | 需求 | 优先级 | 验收标准 |
-|---|---|---|---|
-| MODEL-01 | 产品侧模型目录 CRUD | P0 | 支持新增、编辑、删除非激活模型 |
-| MODEL-02 | 模型参数持久化 | P0 | `runtime_config` 保存引擎、格式、量化、GPU、下载源等参数 |
-| MODEL-03 | Xinference 模型列表 | P0 | 支持名称、参数、已下载/未下载筛选和分页 |
-| MODEL-04 | 查询已下载缓存与运行模型 | P0 | 区分“已下载”“运行中”“未运行” |
-| MODEL-05 | 部署模型 | P0 | 调用 Xinference 启动模型；缓存存在时复用缓存 |
-| MODEL-06 | 停止模型 | P1 | 停止运行实例，不删除模型缓存 |
-| MODEL-07 | 下载/启动进度 | P1 | 显示排队、下载、加载、成功、失败状态 |
-| MODEL-08 | 从 Xinference 模型目录一键导入 | P1 | 自动预填模型名称、类型和推荐参数 |
+### 5.4 模型登记、可用性与运行管理
 
-### 7.6 日志页面
+1. 管理员创建模型时，系统自动生成 UUID；管理员填写名称、唯一 Code、类型、来源、部署方式、启用状态、备注及相应配置。
+2. `来源` 表示模型获取渠道：官方 API、中转站或本地；`部署方式` 表示调用或运行机制：API、Xinference 或 Ollama，两者必须分开保存。
+3. 模型记录存在即为“登记”；启用表示允许被选择、部署或调用；运行表示本地实例已启动；健康表示实际请求测试成功；当前使用表示该模型已被选为当前 Chat 或 Embedding。
+4. API 和中转站模型没有启动/停止操作，仅支持启用、停用和健康检查；本地模型支持部署/启动、停止和健康检查。
+5. 删除仅删除平台内的模型登记记录，不删除 Xinference 模型缓存或本地模型文件；删除当前使用模型前必须先切换同类型模型。
 
-| 编号 | 需求 | 优先级 | 验收标准 |
-|---|---|---|---|
-| LOG-01 | 查询聊天日志 | P1 | 展示输入、输出、模型、Token、耗时与时间 |
-| LOG-02 | 查询入库日志 | P1 | 展示来源、内容长度、Chunk 数与 Embedding 版本 |
+### 5.5 Xinference 模型管理
 
-## 8. 数据与配置要求
+1. 管理员查询 Xinference 目录，并按模型名称、参数、类型、已下载/未下载状态筛选和分页浏览。
+2. 新增或编辑产品侧模型时，可保存 Endpoint、模型类型、维度及 `runtime_config`。
+3. 点击部署后，后端将模型名和允许的启动参数提交给 Xinference；若模型已有缓存，复用缓存。
+4. 页面轮询或刷新运行状态，显示下载、加载、运行或失败结果。
+5. 停止操作仅终止运行实例，不删除本地缓存。
 
-### 8.1 关键数据实体
+### 5.6 日志与监控大屏
 
-| 实体 | 核心字段 | 用途 |
+1. 每次问答、入库、模型部署/停止、模型健康检查和配置变更均写入可查询的事件或日志。
+2. 日志页面展示可追溯的单次记录，支持按时间范围、模型、请求状态和事件类型筛选。
+3. 监控大屏按固定时间窗口聚合日志、状态检查和资源采集数据，展示当前值与趋势，不直接展示原始问题或密钥。
+4. 当指标命中告警阈值时，大屏生成或更新告警项；管理员可跳转日志页面查看关联记录。
+5. WSL2 GPU 利用率、显存、Xinference 状态由后端采集；其余业务指标从对话日志、入库日志、模型健康检查和 RAG 状态聚合。
+
+## 6. 数据需求
+
+### 6.1 核心数据实体
+
+| 实体 | 核心字段 | 数据用途 |
 |---|---|---|
-| documents | content, source, created_at | 原始知识库文档 |
-| chunks | document_id, chunk_text, embedding_version | 文本分块与版本追踪 |
-| llm_logs | input, output, model, tokens, latency | 对话审计与运营分析 |
-| model_configs | model_key, model_type, provider, model_name, endpoint, dimension, is_active | 可选模型目录 |
+| documents | content、source、created_at | 保存原始知识库文档 |
+| chunks | document_id、chunk_text、embedding_version | 保存分块及其向量版本 |
+| FAISS 索引 | vector、chunk 映射、索引版本 | 本地相似度检索 |
+| llm_logs | input、output、model、tokens、latency、rag_enabled | 对话追溯与运营分析 |
+| model_configs | id（UUID）、model_key（Code）、display_name、model_type、source、provider、model_name、endpoint、credential_ref、dimension、enabled、is_active | 模型登记、调用配置与当前激活状态 |
 | model_configs.runtime_config | 引擎、格式、量化、GPU、下载源等 | Xinference 启动参数持久化 |
+| model_runtime_status | model_id、running、healthy、checked_at、error_message | 本地实例运行状态和最近健康检查结果 |
+| metric_snapshots | metric_name、value、dimensions、observed_at | 时间序列监控指标快照，可按模型、服务和状态维度聚合 |
+| alerts | alert_key、level、status、first_seen_at、last_seen_at、message | 活跃和历史告警，关联相关对象或日志 |
 
-### 8.2 配置与安全原则
+### 6.2 数据规则
 
-- `.env` 是启动默认值与密钥来源。
-- PostgreSQL 保存非敏感运行配置、模型目录和启动参数。
-- API Key、数据库连接串不得写入模型目录或返回给浏览器。
-- 当前激活 Chat / Embedding 模型保存在 PostgreSQL，API 重启后恢复。
-- 切换 Embedding 模型、维度或 Provider 必须重建 FAISS。
+- Embedding 模型、向量维度、Embedding 版本与 FAISS 索引必须一致。
+- `.env` 保存密钥和启动默认值；数据库只保存非敏感运行配置和模型元数据。
+- API Key、数据库连接串不得通过 API 返回给浏览器，也不得写入模型目录。
+- 激活的 Chat / Embedding 模型在 API 重启后应可恢复。
+- 删除模型目录前必须校验其不是当前激活模型；停止模型不得删除 Xinference 缓存。
+- `model_key`（Code）必须唯一且稳定；UUID 由后端生成，不允许前端提交或修改。
+- 密钥只可通过 `credential_ref` 引用环境变量名，禁止保存密钥实际值。
+- 日志保留完整内容应遵循留存策略；监控指标默认仅保存聚合值、摘要、长度和脱敏维度。
+- 监控趋势数据以固定窗口聚合，避免监控大屏直接查询全量业务日志。
 
-## 9. API 需求摘要
+## 7. 埋点需求
 
-| API | 用途 |
+埋点用于产品使用分析和故障定位，不记录用户原始密钥；问题和文档内容默认只存摘要、长度或脱敏标识，完整内容仅按日志留存策略保存。
+
+| 事件名 | 触发时机 | 核心属性 | 指标用途 |
+|---|---|---|---|
+| `chat_submit` | 用户发送问题 | rag_enabled、chat_model、question_length | 问答量与 RAG 使用率 |
+| `chat_result` | 问答结束 | success、latency_ms、token_count、rag_hit_count、error_code | 成功率、耗时、检索命中率 |
+| `ingest_submit` | 提交资料 | source_type、content_length、embedding_model | 入库量与来源分布 |
+| `ingest_result` | 入库结束 | success、chunk_count、vector_count、latency_ms、error_code | 入库成功率与性能 |
+| `embedding_check` | 执行服务检查 | model、dimension、latency_ms、success | Embedding 健康度 |
+| `reindex_result` | 索引重建结束 | success、document_count、vector_count、latency_ms | 索引重建成功率与耗时 |
+| `model_switch` | 激活模型 | model_type、from_model、to_model、success | 模型切换频次和失败率 |
+| `model_deploy_result` | 部署结束 | model_name、model_type、cached、success、latency_ms、error_code | 下载/部署成功率与缓存复用率 |
+| `model_stop_result` | 停止结束 | model_name、success、latency_ms | 模型实例管理情况 |
+| `model_health_check` | 模型健康检查结束 | model_id、source、provider、success、latency_ms、error_code | 模型真实可用率 |
+| `model_config_change` | 新增、编辑、启停或删除模型登记 | model_id、action、model_type、source、provider、success | 模型配置变更审计 |
+| `monitor_snapshot` | 采集监控指标 | metric_name、value、dimensions、observed_at | 大屏趋势和容量分析 |
+| `alert_state_change` | 告警创建、恢复或升级 | alert_key、level、from_status、to_status | 告警治理与故障回顾 |
+
+## 8. 验收标准
+
+### 8.1 P0 验收
+
+- 完成“上传文档 → 本地 BGE 向量化 → FAISS 检索 → Chat 回答”的闭环。
+- Chat 页面可在启用/关闭 RAG 两种模式下完成问答，并明确显示失败原因。
+- 管理员可在页面选择并激活 Chat 与 Embedding 模型。
+- 切换 Embedding 模型、维度或 Provider 后，系统明确提示并可执行索引重建。
+- 模型管理可按名称、参数、下载状态查询 Xinference 模型，支持分页，并可区分缓存和运行状态。
+- 模型登记主表支持按名称/Code、类型、来源、部署方式、启用、运行、健康和当前使用状态筛选。
+- 新增模型时由后端生成 UUID；Code 唯一；密钥仅以环境变量引用形式保存和展示。
+- UI 明确区分登记、启用、运行、健康、当前使用状态；API/中转站模型不展示启动或停止操作。
+- 管理员可部署或停止模型，已缓存模型部署时可复用缓存。
+- 日志页面可按时间、模型、事件类型和状态定位单次问答、入库、模型或配置问题。
+- 监控大屏可展示总览、RAG、模型、基础设施和知识库指标的当前值及趋势，并可跳转关联日志。
+- 以下告警至少可触发并展示：Chat 或 Embedding 连续 3 次健康检查失败、Chat 失败率超过 5%、Embedding 失败率超过 2%、P95 问答耗时超过 15 秒、FAISS 索引缺失或版本/维度不一致、GPU 显存超过 90%、PostgreSQL 不可连接、当前本地模型未运行。
+- 无效 Chat API Key、Xinference 未启动、Embedding 未加载等问题不会向前端暴露 Python 堆栈。
+
+### 8.2 P1 验收
+
+- 文件入库显示可追踪的处理结果和 Embedding 版本。
+- 回答展示模型、耗时、Token 和 RAG 命中信息。
+- 模型下载与加载显示进度、失败原因，并支持重试。
+- 管理员可从 Xinference 模型目录一键导入常用模型，自动预填推荐参数。
+- 非敏感运行配置可通过 GUI 修改并持久化；密钥始终不可见。
+- 本地 Chat 模型可替换默认在线 Chat 模型，且不改变既有 RAG 调用链。
+
+## 附录 A：技术实现边界
+
+当前部署边界为：Windows 运行 Vue 与 FastAPI，Docker 运行 PostgreSQL，WSL2 运行 Xinference；FAISS 由后端本地持久化。当前本地 Embedding 使用 `bge-base-zh-v1.5`（768 维），默认 Chat 可使用在线 API，后续可部署本地 Qwen 7B GGUF 等模型。
+
+后端负责 RAG 编排、模型目录 CRUD、模型激活和 Xinference API 代理；Xinference 负责模型下载、缓存、启动和停止。模型下载/加载属于长任务，后续应采用可查询状态或轮询机制，而不是阻塞页面请求。
+
+## 附录 B：版本规划
+
+| 版本 | 范围 |
 |---|---|
-| `POST /api/chat` | Chat 与 RAG 问答 |
-| `POST /api/ingest/text`、`POST /api/ingest/file` | 文档入库 |
-| `GET /api/rag/status` | RAG、索引与数据库状态 |
-| `POST /api/rag/reindex` | 重建 FAISS |
-| `POST /api/rag/model-check` | 检查 Chat 模型 |
-| `POST /api/rag/embedding-check` | 检查 Embedding 服务 |
-| `GET/POST/PUT/DELETE /api/models` | 模型目录 CRUD |
-| `POST /api/models/{id}/activate` | 切换当前 Chat 或 Embedding 模型 |
-| `GET /api/models/runtime/catalog` | Xinference 模型目录筛选与分页 |
-| `GET /api/models/runtime/cached` | 已下载缓存模型 |
-| `GET /api/models/runtime/running` | 当前运行模型 |
-| `POST/DELETE /api/models/{id}/deploy` | 部署/停止 Xinference 模型 |
-
-## 10. 非功能需求
-
-| 类别 | 要求 |
-|---|---|
-| 可用性 | 模型服务失败时返回可理解的错误，不向前端暴露 Python 堆栈 |
-| 性能 | Embedding 和检索在本地完成；模型下载/加载使用异步任务或可轮询进度 |
-| 兼容性 | 支持 Windows + WSL2；Docker 仅承担 PostgreSQL |
-| 可维护性 | 模型路由、Embedding、RAG、Xinference 管理保持模块化 |
-| 数据一致性 | Embedding 版本、向量维度与 FAISS 索引必须一致 |
-| 安全性 | 管理模型、部署模型、修改运行配置后续需接入管理员权限与审计 |
-
-## 11. 版本规划
-
-### 已完成
-
-- FastAPI + Vue + PostgreSQL + FAISS 基础架构。
-- 文档入库、RAG 问答、日志、状态检查与索引重建。
-- WSL2 Xinference + BGE 本地 Embedding。
-- 产品侧模型目录、模型激活、启动参数持久化。
-- Xinference 模型目录、缓存、运行模型查询、部署和停止基础能力。
-
-### 下一版本（P1）
-
-1. Xinference 下载与加载进度展示、失败重试和取消。
-2. 从 Xinference 可用模型一键导入到模型目录。
-3. 运行配置的非敏感参数 GUI 编辑与持久化。
-4. 本地 Qwen 7B GGUF Chat 模型部署、切换和验收。
-5. 模型管理和运行配置的管理员权限控制与操作日志。
-
-### 后续版本（P2）
-
-1. Vision/YOLO 检测与区域 OK/NG 页面。
-2. 多 Provider 路由与 LiteLLM。
-3. FAISS 向量库升级为可选的集中式向量数据库。
-4. 多用户、权限、审计与部署自动化。
-
-## 12. 验收标准
-
-### P0 验收
-
-- 可完成“上传文档 → 本地 BGE 向量化 → FAISS 检索 → Chat 回答”的完整闭环。
-- Chat、Embedding 模型可分别从 UI 选择并激活。
-- 切换 Embedding 后系统明确要求并可执行重建索引。
-- 模型管理可查询 Xinference 可用、已下载、运行中的模型，并能部署/停止模型。
-- 模型启动参数保存后可重复使用。
-- Chat API Key 无效、Xinference 未启动、Embedding 模型未加载等异常均有可理解提示。
-
-### P1 验收
-
-- 模型下载和加载过程可显示进度与失败原因。
-- 管理员无需手工填写常用模型的全部参数即可导入、部署和激活模型。
-- 本地 Chat 模型可替换默认在线 Chat 模型，RAG 链路无需改造。
-
+| 已完成 | 基础 RAG、状态检查、索引重建、WSL2 Xinference BGE、模型目录、模型切换、Xinference 查询/部署/停止 |
+| P1 | 模型下载进度与重试、一键导入、运行配置 GUI、日志完善、本地 Chat 模型、管理员权限与操作审计 |
+| P2 | Vision/YOLO、多 Provider 路由、可选集中式向量库、多用户和部署自动化 |

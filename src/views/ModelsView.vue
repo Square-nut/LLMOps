@@ -361,10 +361,10 @@ onMounted(async () => {
   <div class="models-page">
     <div class="intro">
       <p>维护 LLMOps 可使用的模型目录。这里保存业务侧的非敏感配置，不会启动、停止或管理 Xinference 的模型进程。</p>
-      <button type="button" class="refresh-btn" :disabled="loading" @click="load">
+      <el-button :loading="loading" @click="load">
         {{ loading ? '刷新中…' : '刷新列表' }}
-      </button>
-      <button type="button" class="save-btn" @click="openCreate">新增模型</button>
+      </el-button>
+      <el-button type="primary" @click="openCreate">新增模型</el-button>
     </div>
 
     <section class="runtime-card">
@@ -373,55 +373,48 @@ onMounted(async () => {
           <h2>Xinference 运行时</h2>
           <p>查询可用模型，并从模型目录提交下载和启动任务。</p>
         </div>
-        <button type="button" class="refresh-btn" :disabled="runtimeLoading" @click="refreshRuntime">
+        <el-button :loading="runtimeLoading" @click="refreshRuntime">
           {{ runtimeLoading ? '查询中…' : '刷新运行时' }}
-        </button>
+        </el-button>
       </div>
       <div class="runtime-controls">
         <label>
           <span>Xinference API</span>
-          <input v-model="runtimeEndpoint" placeholder="http://172.22.39.118:9997/v1" />
+          <el-input v-model="runtimeEndpoint" placeholder="http://172.22.39.118:9997/v1" />
         </label>
         <label>
           <span>模型类型</span>
-          <select v-model="runtimeType" @change="changeCatalogFilter">
-            <option value="embedding">Embedding</option>
-            <option value="LLM">LLM / Chat</option>
-          </select>
+          <el-select v-model="runtimeType" @change="changeCatalogFilter">
+            <el-option label="Embedding" value="embedding" />
+            <el-option label="LLM / Chat" value="LLM" />
+          </el-select>
         </label>
       </div>
       <div class="runtime-filters">
-        <input v-model="catalogNameQuery" placeholder="按模型名称查询" @keyup.enter="changeCatalogFilter" />
-        <input v-model="catalogParamQuery" placeholder="按参数查询，如 transformers / Q4 / 768" @keyup.enter="changeCatalogFilter" />
-        <select v-model="catalogDownloaded" @change="changeCatalogFilter">
-          <option value="all">全部状态</option>
-          <option value="yes">已下载</option>
-          <option value="no">未下载</option>
-        </select>
-        <button type="button" class="refresh-btn" @click="changeCatalogFilter">查询</button>
+        <el-input v-model="catalogNameQuery" placeholder="按模型名称查询" @keyup.enter="changeCatalogFilter" />
+        <el-input v-model="catalogParamQuery" placeholder="按参数查询，如 transformers / Q4 / 768" @keyup.enter="changeCatalogFilter" />
+        <el-select v-model="catalogDownloaded" @change="changeCatalogFilter">
+          <el-option label="全部状态" value="all" />
+          <el-option label="已下载" value="yes" />
+          <el-option label="未下载" value="no" />
+        </el-select>
+        <el-button @click="changeCatalogFilter">查询</el-button>
       </div>
       <div class="runtime-table-wrap">
-        <table class="runtime-table">
-          <thead>
-            <tr><th>模型名称</th><th>下载状态</th><th>运行状态</th><th>参数摘要</th></tr>
-          </thead>
-          <tbody>
-            <tr v-if="!runtimeLoading && !catalogItems.length"><td colspan="4" class="runtime-empty">暂无匹配模型</td></tr>
-            <tr v-for="item in catalogItems" :key="item.model_name">
-              <td class="mono">{{ item.model_name }}</td>
-              <td><span :class="item.downloaded ? 'state enabled' : 'state disabled'">{{ item.downloaded ? '已下载' : '未下载' }}</span></td>
-              <td><span :class="item.running ? 'state current' : 'state disabled'">{{ item.running ? '运行中' : '未运行' }}</span></td>
-              <td class="param-cell" :title="JSON.stringify(item.parameters)">{{ JSON.stringify(item.parameters) }}</td>
-            </tr>
-          </tbody>
-        </table>
+        <el-table v-loading="runtimeLoading" :data="catalogItems" class="runtime-table" empty-text="暂无匹配模型">
+          <el-table-column prop="model_name" label="模型名称" min-width="220" class-name="mono" />
+          <el-table-column label="下载状态" width="110">
+            <template #default="{ row }"><el-tag :type="row.downloaded ? 'success' : 'info'">{{ row.downloaded ? '已下载' : '未下载' }}</el-tag></template>
+          </el-table-column>
+          <el-table-column label="运行状态" width="110">
+            <template #default="{ row }"><el-tag :type="row.running ? 'primary' : 'info'">{{ row.running ? '运行中' : '未运行' }}</el-tag></template>
+          </el-table-column>
+          <el-table-column label="参数摘要" min-width="320">
+            <template #default="{ row }"><span class="param-cell" :title="JSON.stringify(row.parameters)">{{ JSON.stringify(row.parameters) }}</span></template>
+          </el-table-column>
+        </el-table>
       </div>
-      <div class="pagination">
-        <span>共 {{ catalogTotal }} 个模型</span>
-        <button type="button" :disabled="catalogPage <= 1" @click="catalogPage--; queryCatalog()">上一页</button>
-        <span>第 {{ catalogPage }} / {{ Math.max(1, Math.ceil(catalogTotal / catalogPageSize)) }} 页</span>
-        <button type="button" :disabled="catalogPage >= Math.max(1, Math.ceil(catalogTotal / catalogPageSize))" @click="catalogPage++; queryCatalog()">下一页</button>
-      </div>
+      <div class="pagination"><span>共 {{ catalogTotal }} 个模型</span><el-pagination v-model:current-page="catalogPage" :page-size="catalogPageSize" :total="catalogTotal" layout="prev, pager, next" @current-change="queryCatalog" /></div>
       <div v-if="runningModels.length" class="running-line">
         运行中：<span v-for="item in runningModels" :key="String(item.id || item.model_uid)">{{ runtimeModelName(item) }}</span>
       </div>
@@ -434,113 +427,60 @@ onMounted(async () => {
       </div>
     </section>
 
-    <p v-if="error" class="error">{{ error }}</p>
-    <p v-if="activationMessage" class="success">{{ activationMessage }}</p>
+    <el-alert v-if="error" :title="error" type="error" show-icon :closable="false" class="notice" />
+    <el-alert v-if="activationMessage" :title="activationMessage" type="success" show-icon :closable="false" class="notice" />
 
     <div class="content-grid">
       <section class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>模型</th>
-              <th>类型</th>
-              <th>运行时</th>
-              <th>模型名称</th>
-              <th>端点</th>
-              <th>状态</th>
-              <th>更新时间</th>
-              <th aria-label="操作" />
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-if="!loading && models.length === 0">
-              <td colspan="8" class="empty">暂无模型。可从右侧新增 GeekAI、Xinference、Ollama 等模型。</td>
-            </tr>
-            <tr v-for="item in models" :key="item.id">
-              <td>
-                <strong>{{ item.display_name }}</strong>
-                <span class="sub mono">{{ item.model_key }}</span>
-              </td>
-              <td><span class="type-tag">{{ typeLabel(item.model_type) }}</span></td>
-              <td>{{ providerLabel(item.provider) }}</td>
-              <td class="mono">{{ item.model_name }}</td>
-              <td class="endpoint mono" :title="item.endpoint || ''">{{ item.endpoint || '-' }}</td>
-              <td>
-                <span v-if="item.is_active" class="state current">当前使用</span>
-                <span v-else class="state" :class="item.enabled ? 'enabled' : 'disabled'">{{ item.enabled ? '启用' : '停用' }}</span>
-              </td>
-              <td class="time">{{ formatTime(item.updated_at) }}</td>
-              <td class="actions">
-                <button
-                  v-if="item.model_type !== 'vision'"
-                  type="button"
-                  class="activate"
-                  :disabled="!item.enabled || item.is_active || activatingId === item.id"
-                  @click="activate(item)"
-                >
-                  {{ item.is_active ? '当前使用' : activatingId === item.id ? '切换中…' : '设为当前' }}
-                </button>
-                <button type="button" @click="edit(item)">编辑</button>
-                <button
-                  v-if="item.provider === 'xinference' && !runningFor(item)"
-                  type="button"
-                  class="activate"
-                  :disabled="deployingId === item.id"
-                  @click="deploy(item)"
-                >
-                  {{ deployingId === item.id ? '部署中…' : '部署到 Xinference' }}
-                </button>
-                <button
-                  v-if="item.provider === 'xinference' && runningFor(item)"
-                  type="button"
-                  class="danger"
-                  @click="stopRuntime(item)"
-                >
-                  停止运行
-                </button>
-                <button type="button" class="danger" @click="remove(item)">删除</button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+        <el-table v-loading="loading" :data="models" empty-text="暂无模型。请点击新增模型创建 GeekAI、Xinference、Ollama 等模型。">
+          <el-table-column label="模型" min-width="160"><template #default="{ row }"><strong>{{ row.display_name }}</strong><span class="sub mono">{{ row.model_key }}</span></template></el-table-column>
+          <el-table-column label="类型" width="100"><template #default="{ row }"><el-tag>{{ typeLabel(row.model_type) }}</el-tag></template></el-table-column>
+          <el-table-column label="运行时" width="110"><template #default="{ row }">{{ providerLabel(row.provider) }}</template></el-table-column>
+          <el-table-column prop="model_name" label="模型名称" min-width="160" class-name="mono" />
+          <el-table-column label="端点" min-width="180"><template #default="{ row }"><span class="endpoint mono" :title="row.endpoint || ''">{{ row.endpoint || '-' }}</span></template></el-table-column>
+          <el-table-column label="状态" width="100"><template #default="{ row }"><el-tag :type="row.is_active ? 'primary' : row.enabled ? 'success' : 'info'">{{ row.is_active ? '当前使用' : row.enabled ? '启用' : '停用' }}</el-tag></template></el-table-column>
+          <el-table-column label="更新时间" width="170"><template #default="{ row }">{{ formatTime(row.updated_at) }}</template></el-table-column>
+          <el-table-column label="操作" fixed="right" min-width="310">
+            <template #default="{ row }">
+              <el-button v-if="row.model_type !== 'vision'" link type="primary" :disabled="!row.enabled || row.is_active || activatingId === row.id" @click="activate(row)">{{ row.is_active ? '当前使用' : activatingId === row.id ? '切换中…' : '设为当前' }}</el-button>
+              <el-button link @click="edit(row)">编辑</el-button>
+              <el-button v-if="row.provider === 'xinference' && !runningFor(row)" link type="primary" :loading="deployingId === row.id" @click="deploy(row)">部署</el-button>
+              <el-button v-if="row.provider === 'xinference' && runningFor(row)" link type="warning" @click="stopRuntime(row)">停止</el-button>
+              <el-button link type="danger" @click="remove(row)">删除</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
       </section>
 
-      <section v-if="formOpen" class="form-card modal-card">
+      <el-dialog v-model="formOpen" :title="editingId ? '编辑模型' : '新增模型'" width="680px" :close-on-click-modal="false" @closed="closeForm">
+      <section class="form-card">
         <div class="form-title">
           <h2>{{ editingId ? '编辑模型' : '新增模型' }}</h2>
-          <button v-if="editingId" type="button" class="text-btn" @click="closeForm">取消编辑</button>
+          <el-button v-if="editingId" link @click="closeForm">取消编辑</el-button>
         </div>
         <form @submit.prevent="save">
           <label>
             <span>显示名称</span>
-            <input v-model="form.display_name" required placeholder="例如：中文向量模型" />
+            <el-input v-model="form.display_name" required placeholder="例如：中文向量模型" />
           </label>
           <label>
             <span>模型标识</span>
-            <input v-model="form.model_key" required pattern="[A-Za-z0-9._-]+" placeholder="bge-base-zh" />
+            <el-input v-model="form.model_key" required placeholder="bge-base-zh" />
             <small>字母、数字、点、下划线或连字符。</small>
           </label>
           <div class="two-col">
             <label>
               <span>类型</span>
-              <select v-model="form.model_type">
-                <option value="chat">对话 LLM</option>
-                <option value="embedding">Embedding</option>
-                <option value="vision">视觉模型</option>
-              </select>
+              <el-select v-model="form.model_type"><el-option label="对话 LLM" value="chat" /><el-option label="Embedding" value="embedding" /><el-option label="视觉模型" value="vision" /></el-select>
             </label>
             <label>
               <span>接入方式</span>
-              <select v-model="form.provider">
-                <option v-for="option in providerOptions[form.model_type]" :key="option.value" :value="option.value">
-                  {{ option.label }}
-                </option>
-              </select>
+              <el-select v-model="form.provider"><el-option v-for="option in providerOptions[form.model_type]" :key="option.value" :label="option.label" :value="option.value" /></el-select>
             </label>
           </div>
           <label>
             <span>模型名称</span>
-            <input
+            <el-input
               v-model="form.model_name"
               required
               :placeholder="form.model_type === 'embedding' ? 'BAAI/bge-base-zh-v1.5' : 'deepseek / qwen / gpt 模型标识'"
@@ -548,35 +488,37 @@ onMounted(async () => {
           </label>
           <label>
             <span>服务端点{{ endpointRequired() ? '（必填）' : '（可选）' }}</span>
-            <input v-model="form.endpoint" type="url" :required="endpointRequired()" :placeholder="endpointPlaceholder()" />
+            <el-input v-model="form.endpoint" :placeholder="endpointPlaceholder()" />
             <small>{{ credentialHint() }}</small>
           </label>
           <label v-if="form.model_type === 'embedding'">
             <span>向量维度（Embedding 可填）</span>
-            <input v-model="form.dimension" type="number" min="1" step="1" placeholder="768" />
+            <el-input-number v-model="form.dimension" :min="1" :step="1" placeholder="768" />
           </label>
           <label>
             <span>备注</span>
-            <textarea v-model="form.notes" rows="3" placeholder="用途、显存需求或部署说明" />
+            <el-input v-model="form.notes" type="textarea" :rows="3" placeholder="用途、显存需求或部署说明" />
           </label>
           <label v-if="form.provider === 'xinference'">
             <span>Xinference 启动参数（JSON）</span>
-            <textarea
+            <el-input
               v-model="form.runtime_config_json"
-              rows="5"
+              type="textarea"
+              :rows="5"
               placeholder='{"model_engine":"sentence_transformers","model_format":"pytorch","download_hub":"modelscope","gpu_idx":[0]}'
             />
             <small>参数会保存到 PostgreSQL，下次部署直接复用。</small>
           </label>
           <label class="toggle">
-            <input v-model="form.enabled" type="checkbox" />
+            <el-switch v-model="form.enabled" />
             <span>在模型目录中启用</span>
           </label>
-          <button type="submit" class="save-btn" :disabled="saving">
+          <el-button type="primary" native-type="submit" :loading="saving">
             {{ saving ? '保存中…' : editingId ? '保存修改' : '新增模型' }}
-          </button>
+          </el-button>
         </form>
       </section>
+      </el-dialog>
     </div>
   </div>
 </template>

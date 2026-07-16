@@ -1,6 +1,15 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
+import { RouterView, useRoute, useRouter } from 'vue-router'
+import {
+  ChatDotRound,
+  Collection,
+  Cpu,
+  DocumentAdd,
+  Plus,
+  Setting,
+  Tickets,
+} from '@element-plus/icons-vue'
 import { useChatStore } from '@/stores/chat'
 
 const route = useRoute()
@@ -42,29 +51,25 @@ function onDeleteConversation(e: Event, id: string) {
   <div class="layout">
     <aside class="sidebar">
       <div class="sidebar-top">
-        <button type="button" class="new-chat-btn" @click="startNewChat">
-          <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M12 5v14M5 12h14" />
-          </svg>
+        <el-button class="new-chat-btn" @click="startNewChat">
+          <el-icon><Plus /></el-icon>
           新对话
-        </button>
+        </el-button>
       </div>
 
       <div class="conversation-section">
         <div v-if="conversations.length > 0" class="section-label">最近</div>
         <div class="conversation-list">
-          <button
+          <el-button
             v-for="conv in conversations"
             :key="conv.id"
-            type="button"
+            text
             class="conversation-item"
             :class="{ active: conv.id === chatStore.activeId && route.name === 'chat' }"
             :title="conv.title"
             @click="openConversation(conv.id)"
           >
-            <svg class="conv-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-              <path d="M8 10h8M8 14h5M5 4h14a2 2 0 0 1 2 2v11l-3-2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" />
-            </svg>
+            <el-icon class="conv-icon"><ChatDotRound /></el-icon>
             <span class="conv-title">{{ conv.title }}</span>
             <span
               class="conv-delete"
@@ -72,54 +77,20 @@ function onDeleteConversation(e: Event, id: string) {
               aria-label="删除对话"
               @click="onDeleteConversation($event, conv.id)"
             >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M18 6L6 18M6 6l12 12" />
-              </svg>
+              ×
             </span>
-          </button>
+          </el-button>
         </div>
       </div>
 
       <div class="sidebar-bottom">
-        <nav class="sidebar-nav">
-          <RouterLink to="/ingest" class="nav-item" active-class="active">
-            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z" />
-              <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8" />
-            </svg>
-            文档入库
-          </RouterLink>
-          <RouterLink to="/logs" class="nav-item" active-class="active">
-            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-              <path d="M4 19h16M4 15h16M4 11h16M4 7h10" />
-            </svg>
-            使用日志
-          </RouterLink>
-          <RouterLink to="/status" class="nav-item" active-class="active">
-            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-              <circle cx="12" cy="12" r="3" />
-              <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
-            </svg>
-            系统状态
-          </RouterLink>
-          <RouterLink to="/settings" class="nav-item" active-class="active">
-            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-              <path d="M4 6h16M4 12h16M4 18h16" />
-              <circle cx="8" cy="6" r="1.5" />
-              <circle cx="15" cy="12" r="1.5" />
-              <circle cx="11" cy="18" r="1.5" />
-            </svg>
-            运行配置
-          </RouterLink>
-          <RouterLink to="/models" class="nav-item" active-class="active">
-            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-              <rect x="3" y="5" width="18" height="5" rx="1" />
-              <rect x="3" y="14" width="18" height="5" rx="1" />
-              <path d="M7 7.5h.01M7 16.5h.01M11 7.5h6M11 16.5h6" />
-            </svg>
-            模型管理
-          </RouterLink>
-        </nav>
+        <el-menu class="sidebar-nav" :default-active="route.path" router background-color="#171717" text-color="#ececec" active-text-color="#ffffff">
+          <el-menu-item index="/ingest"><el-icon><DocumentAdd /></el-icon><span>文档入库</span></el-menu-item>
+          <el-menu-item index="/logs"><el-icon><Tickets /></el-icon><span>使用日志</span></el-menu-item>
+          <el-menu-item index="/status"><el-icon><Collection /></el-icon><span>系统状态</span></el-menu-item>
+          <el-menu-item index="/settings"><el-icon><Setting /></el-icon><span>运行配置</span></el-menu-item>
+          <el-menu-item index="/models"><el-icon><Cpu /></el-icon><span>模型管理</span></el-menu-item>
+        </el-menu>
         <div class="sidebar-footer">
           <span class="brand">LLMOps</span>
         </div>

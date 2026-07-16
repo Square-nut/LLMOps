@@ -118,12 +118,12 @@ onMounted(loadAll)
 <template>
   <div class="panel">
     <div class="toolbar">
-      <button type="button" class="refresh-btn" :disabled="loading || reindexing" @click="loadAll">
+      <el-button :loading="loading" :disabled="reindexing" @click="loadAll">
         {{ loading ? '刷新中…' : '刷新本地状态' }}
-      </button>
+      </el-button>
     </div>
 
-    <p v-if="error" class="error">{{ error }}</p>
+    <el-alert v-if="error" :title="error" type="error" show-icon :closable="false" />
 
     <section v-if="health" class="section">
       <h2>系统</h2>
@@ -157,14 +157,14 @@ onMounted(loadAll)
         <span class="hint">该操作会真实调用一次 LLM</span>
       </div>
       <div class="actions">
-        <button type="button" class="model-check-btn" :disabled="modelChecking" @click="handleModelCheck">
+        <el-button type="primary" :loading="modelChecking" @click="handleModelCheck">
           {{ modelChecking ? '检查中…' : '手动测试模型' }}
-        </button>
+        </el-button>
         <span v-if="modelCheck" class="success">
           {{ modelCheck.model }} · {{ modelCheck.latency_ms }}ms · {{ modelCheck.reply }}
         </span>
       </div>
-      <p v-if="modelCheckError" class="error">{{ modelCheckError }}</p>
+      <el-alert v-if="modelCheckError" :title="modelCheckError" type="error" show-icon :closable="false" />
     </section>
 
     <section class="section">
@@ -173,25 +173,20 @@ onMounted(loadAll)
         <span class="hint">该操作会真实调用一次 embedding 服务</span>
       </div>
       <div class="actions">
-        <button
-          type="button"
-          class="model-check-btn"
-          :disabled="embeddingChecking"
-          @click="handleEmbeddingCheck"
-        >
+        <el-button type="primary" :loading="embeddingChecking" @click="handleEmbeddingCheck">
           {{ embeddingChecking ? '检查中…' : '手动测试 Embedding' }}
-        </button>
+        </el-button>
         <span v-if="embeddingCheck" class="success">
           {{ embeddingCheck.backend }} · {{ embeddingCheck.model }} · dim {{ embeddingCheck.dim }} ·
           {{ embeddingCheck.device }}
         </span>
       </div>
-      <p v-if="embeddingCheckError" class="error">{{ embeddingCheckError }}</p>
+      <el-alert v-if="embeddingCheckError" :title="embeddingCheckError" type="error" show-icon :closable="false" />
     </section>
 
     <p v-if="loading && !health && !ragStatus" class="loading">加载本地状态…</p>
-    <p v-if="ragError" class="error">{{ ragError }}</p>
-    <p v-if="reindexMessage" class="success">{{ reindexMessage }}</p>
+    <el-alert v-if="ragError" :title="ragError" type="error" show-icon :closable="false" />
+    <el-alert v-if="reindexMessage" :title="reindexMessage" type="success" show-icon :closable="false" />
 
     <section v-if="ragStatus" class="section">
       <div class="section-head">
@@ -284,14 +279,9 @@ onMounted(loadAll)
       </div>
 
       <div class="actions">
-        <button
-          type="button"
-          class="reindex-btn"
-          :disabled="reindexing || !ragStatus.database.enabled"
-          @click="handleReindex"
-        >
+        <el-button type="warning" :loading="reindexing" :disabled="!ragStatus.database.enabled" @click="handleReindex">
           {{ reindexing ? '重建中…' : '重建索引' }}
-        </button>
+        </el-button>
         <span v-if="!ragStatus.database.enabled" class="hint">需要配置数据库后才能从 DB 重建</span>
       </div>
     </section>
