@@ -58,6 +58,7 @@
 | MODEL-04 | 下载/加载进度与失败重试 | 清楚了解长任务结果 | P1 | 待实现 |
 | MODEL-05 | 统一模型登记列表与多维筛选 | 快速定位需维护的模型记录 | P0 | 待完善 |
 | MODEL-06 | 模型健康检查 | 区分“实例在运行”和“请求可用” | P1 | 待实现 |
+| MODEL-07 | 来源与部署方式联动表单 | 仅展示当前模型来源所需的配置，降低误配 | P0 | 待实现 |
 | LOG-01 | 对话和入库日志 | 问题追溯与运行分析 | P1 | 部分实现 |
 | MONITOR-01 | 监控大屏 | 集中判断系统、模型与 RAG 链路健康度 | P1 | 待实现 |
 | MONITOR-02 | 指标告警 | 在服务或资源异常前提示管理员 | P1 | 待实现 |
@@ -108,7 +109,8 @@
 | 页面内容 | 模型登记主表、Xinference 运行时列表、筛选器、分页、新增/编辑弹窗 |
 | 主表字段 | 名称、UUID、Code、类型、来源、部署方式、启用状态、运行状态、健康状态、当前使用、更新时间、操作 |
 | 筛选条件 | 名称或 Code、类型（Chat / Embedding / Rerank / Vision）、来源（官方 API / 中转站 / 本地）、部署方式（API / Xinference / Ollama）、启用、运行、健康、当前使用状态 |
-| 新增/编辑字段 | 自动生成且只读的 UUID、名称、唯一 Code、启用开关、备注、类型、来源、部署方式、模型标识、Endpoint、密钥引用、Embedding 维度与本地运行参数 |
+| 新增/编辑字段 | 自动生成且只读的 UUID、名称、唯一 Code、启用开关、备注、类型、来源；其余字段依来源和部署方式动态显示 |
+| 表单联动 | 来源为官方 API / 中转站时，显示模型标识、Endpoint、密钥引用；来源为本地时才显示部署方式；本地 + Xinference 时显示模型选择器、已选模型摘要、Endpoint、Embedding 维度与高级运行参数；本地 + Ollama 时显示 Ollama 模型标识、Endpoint 与运行参数 |
 | 关键操作 | 新增、编辑、删除、启用/停用、健康检查、设为当前；本地模型可部署/启动、停止 |
 | 结果反馈 | 明确区分登记、启用、运行、健康、当前使用，以及“已下载缓存”状态；展示 Endpoint、维度和启动参数 |
 
@@ -117,9 +119,9 @@
 | 项目 | 说明 |
 |---|---|
 | 使用者 | 管理员、开发者 |
-| 页面内容 | 对话日志、入库日志、模型运行与配置变更日志、时间和模型筛选条件 |
+| 页面内容 | 对话日志、入库日志、模型运行与配置变更日志、时间和模型筛选条件；Chat 日志展示输入 Token、输出 Token、总 Token |
 | 关键操作 | 按时间、请求状态、模型、操作类型查询和定位单次问题 |
-| 结果反馈 | 展示输入摘要、输出摘要、模型、耗时、Token、Chunk 数、操作人/来源和失败原因 |
+| 结果反馈 | 展示输入摘要、输出摘要、模型、耗时、输入 Token、输出 Token、总 Token、Chunk 数、操作人/来源和失败原因 |
 
 ### 4.7 监控大屏
 
@@ -128,9 +130,9 @@
 | 使用者 | 管理员、开发者 |
 | 页面目标 | 以聚合指标、趋势图、状态卡片和告警列表判断系统整体健康度，不替代日志的单请求排障能力 |
 | 刷新方式 | 页面打开时加载；默认每 30 秒刷新，可手动刷新；异常状态需醒目标记 |
-| 总览指标 | 今日请求数、成功率、在线用户数（具备认证后）、异常数、当前 Chat 模型、当前 Embedding 模型、GPU 显存占用 |
+| 总览指标 | 今日请求数、成功率、今日 Chat Token 消耗、在线 API 估算费用（可配置单价时）、在线用户数（具备认证后）、异常数、当前 Chat 模型、当前 Embedding 模型、GPU 显存占用 |
 | RAG 指标 | RAG 开启率、检索命中率、空检索率、平均检索耗时、索引向量数、索引版本与最近重建时间 |
-| 模型指标 | Chat / Embedding 请求量、平均耗时、P95 耗时、Token 用量、失败率、最近健康检查时间和连续失败次数 |
+| 模型指标 | Chat 请求量、输入/输出/总 Token、按模型的 Token 趋势与占比、平均耗时、P95 耗时、失败率、最近健康检查时间和连续失败次数；Embedding 单独展示请求数、文本量和向量数 |
 | 基础设施指标 | FastAPI、PostgreSQL、FAISS、Xinference 状态，GPU 利用率、显存占用和本地模型运行状态 |
 | 知识库指标 | 文档数、Chunk 数、今日入库数、入库成功率、最近入库时间 |
 | 告警列表 | 展示告警级别、对象、触发时间、当前状态、说明和跳转至相关日志的入口 |
@@ -163,11 +165,15 @@
 
 ### 5.4 模型登记、可用性与运行管理
 
-1. 管理员创建模型时，系统自动生成 UUID；管理员填写名称、唯一 Code、类型、来源、部署方式、启用状态、备注及相应配置。
-2. `来源` 表示模型获取渠道：官方 API、中转站或本地；`部署方式` 表示调用或运行机制：API、Xinference 或 Ollama，两者必须分开保存。
-3. 模型记录存在即为“登记”；启用表示允许被选择、部署或调用；运行表示本地实例已启动；健康表示实际请求测试成功；当前使用表示该模型已被选为当前 Chat 或 Embedding。
-4. API 和中转站模型没有启动/停止操作，仅支持启用、停用和健康检查；本地模型支持部署/启动、停止和健康检查。
-5. 删除仅删除平台内的模型登记记录，不删除 Xinference 模型缓存或本地模型文件；删除当前使用模型前必须先切换同类型模型。
+1. 管理员创建模型时，系统自动生成 UUID；管理员填写名称、唯一 Code、类型、来源、启用状态和备注。
+2. `来源` 是表单的一级分支：官方 API、中转站或本地。只有选择“本地”后，才显示必填的 `部署方式`，可选 Xinference 或 Ollama。
+3. 来源为官方 API 或中转站时，表单仅展示模型标识、Endpoint 和密钥引用；密钥引用仅保存环境变量名称。
+4. 来源为本地且部署方式为 Xinference 时，模型标识不允许手工填写。管理员点击“更换模型”打开 Xinference 模型库选择器，按名称、类型、引擎、下载状态筛选并选择模型。
+5. 选择 Xinference 模型后，系统自动回填模型标识、模型类型、Embedding 维度、模型引擎、模型格式、量化方式和下载源到 `runtime_config`；表单显示已选模型摘要。高级区域允许管理员调整 GPU、下载源等运行参数。
+6. 来源为本地且部署方式为 Ollama 时，显示 Ollama 模型标识、Endpoint 和适用运行参数，不显示 Xinference 专属字段。
+7. 模型记录存在即为“登记”；启用表示允许被选择、部署或调用；运行表示本地实例已启动；健康表示实际请求测试成功；当前使用表示该模型已被选为当前 Chat 或 Embedding。
+8. API 和中转站模型没有启动/停止操作，仅支持启用、停用和健康检查；本地模型支持部署/启动、停止和健康检查。
+9. 删除仅删除平台内的模型登记记录，不删除 Xinference 模型缓存或本地模型文件；删除当前使用模型前必须先切换同类型模型。
 
 ### 5.5 Xinference 模型管理
 
@@ -194,8 +200,9 @@
 | documents | content、source、created_at | 保存原始知识库文档 |
 | chunks | document_id、chunk_text、embedding_version | 保存分块及其向量版本 |
 | FAISS 索引 | vector、chunk 映射、索引版本 | 本地相似度检索 |
-| llm_logs | input、output、model、tokens、latency、rag_enabled | 对话追溯与运营分析 |
-| model_configs | id（UUID）、model_key（Code）、display_name、model_type、source、provider、model_name、endpoint、credential_ref、dimension、enabled、is_active | 模型登记、调用配置与当前激活状态 |
+| llm_logs | input、output、model、input_tokens、output_tokens、total_tokens、latency、rag_enabled | 对话追溯与运营分析 |
+| model_pricing | model_id、input_token_price、output_token_price、currency、effective_at | 在线 API / 中转站模型的 Token 单价与费用估算 |
+| model_configs | id（UUID）、model_key（Code）、display_name、model_type、source、deployment_type、model_name、endpoint、credential_ref、dimension、enabled、is_active | 模型登记、调用配置与当前激活状态 |
 | model_configs.runtime_config | 引擎、格式、量化、GPU、下载源等 | Xinference 启动参数持久化 |
 | model_runtime_status | model_id、running、healthy、checked_at、error_message | 本地实例运行状态和最近健康检查结果 |
 | metric_snapshots | metric_name、value、dimensions、observed_at | 时间序列监控指标快照，可按模型、服务和状态维度聚合 |
@@ -210,8 +217,13 @@
 - 删除模型目录前必须校验其不是当前激活模型；停止模型不得删除 Xinference 缓存。
 - `model_key`（Code）必须唯一且稳定；UUID 由后端生成，不允许前端提交或修改。
 - 密钥只可通过 `credential_ref` 引用环境变量名，禁止保存密钥实际值。
+- 当 `source` 为 `official_api` 或 `gateway` 时，`deployment_type` 固定为 `api`；当 `source` 为 `local` 时，`deployment_type` 必填且仅允许 `xinference` 或 `ollama`。
+- Xinference 模型的 `model_name`、`dimension` 和 `runtime_config` 默认来自 Xinference 模型目录；管理员仅在高级配置中修改允许覆盖的运行参数。
 - 日志保留完整内容应遵循留存策略；监控指标默认仅保存聚合值、摘要、长度和脱敏维度。
 - 监控趋势数据以固定窗口聚合，避免监控大屏直接查询全量业务日志。
+- Chat Token 必须拆分保存输入、输出与总量；总量应等于输入与输出之和。模型未返回 Token 时，字段可为空并标注为“未提供”。
+- 仅在线 API 或中转站且配置单价的 Chat 模型计算估算费用；本地模型仅统计 Token 消耗，不计算费用。
+- Embedding 不与 Chat Token 混合统计，应单独记录请求数、输入文本长度或 Token（服务可提供时）、向量数和耗时。
 
 ## 7. 埋点需求
 
@@ -221,6 +233,8 @@
 |---|---|---|---|
 | `chat_submit` | 用户发送问题 | rag_enabled、chat_model、question_length | 问答量与 RAG 使用率 |
 | `chat_result` | 问答结束 | success、latency_ms、token_count、rag_hit_count、error_code | 成功率、耗时、检索命中率 |
+| `chat_token_usage` | Chat 请求结束 | model_id、input_tokens、output_tokens、total_tokens、estimated_cost | Token 消耗与在线模型费用分析 |
+| `embedding_usage` | Embedding 请求结束 | model_id、request_count、text_length、input_tokens（可选）、vector_count、latency_ms | Embedding 使用量与性能分析 |
 | `ingest_submit` | 提交资料 | source_type、content_length、embedding_model | 入库量与来源分布 |
 | `ingest_result` | 入库结束 | success、chunk_count、vector_count、latency_ms、error_code | 入库成功率与性能 |
 | `embedding_check` | 执行服务检查 | model、dimension、latency_ms、success | Embedding 健康度 |
@@ -245,9 +259,13 @@
 - 模型登记主表支持按名称/Code、类型、来源、部署方式、启用、运行、健康和当前使用状态筛选。
 - 新增模型时由后端生成 UUID；Code 唯一；密钥仅以环境变量引用形式保存和展示。
 - UI 明确区分登记、启用、运行、健康、当前使用状态；API/中转站模型不展示启动或停止操作。
+- 模型表单随来源动态切换字段：官方 API / 中转站不展示部署方式；本地模型必须选择 Xinference 或 Ollama；Xinference 专属字段不在其他分支显示。
+- 选择 Xinference 模型后，模型标识、类型、维度、引擎、格式、量化和下载源自动回填；普通表单中不可手工修改模型标识。
 - 管理员可部署或停止模型，已缓存模型部署时可复用缓存。
 - 日志页面可按时间、模型、事件类型和状态定位单次问答、入库、模型或配置问题。
+- 单条 Chat 日志可展示输入 Token、输出 Token 和总 Token；Token 不可用时明确标记“未提供”。
 - 监控大屏可展示总览、RAG、模型、基础设施和知识库指标的当前值及趋势，并可跳转关联日志。
+- 监控大屏展示今日 Chat Token 消耗、按模型的 Token 趋势/占比；仅对配置单价的在线 API 或中转站模型展示估算费用。Embedding 请求量、文本量和向量数独立展示。
 - 以下告警至少可触发并展示：Chat 或 Embedding 连续 3 次健康检查失败、Chat 失败率超过 5%、Embedding 失败率超过 2%、P95 问答耗时超过 15 秒、FAISS 索引缺失或版本/维度不一致、GPU 显存超过 90%、PostgreSQL 不可连接、当前本地模型未运行。
 - 无效 Chat API Key、Xinference 未启动、Embedding 未加载等问题不会向前端暴露 Python 堆栈。
 
