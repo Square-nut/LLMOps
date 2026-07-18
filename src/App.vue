@@ -5,6 +5,7 @@ import {
   ChatDotRound,
   Collection,
   Cpu,
+  DataAnalysis,
   DocumentAdd,
   Plus,
   Setting,
@@ -21,6 +22,7 @@ const conversations = computed(() => chatStore.sortedConversations)
 function pageTitle() {
   if (route.name === 'ingest') return '文档入库'
   if (route.name === 'logs') return '使用日志'
+  if (route.name === 'monitor') return '监控大屏'
   if (route.name === 'status') return '系统状态'
   if (route.name === 'settings') return '运行配置'
   if (route.name === 'models') return '模型管理'
@@ -87,6 +89,7 @@ function onDeleteConversation(e: Event, id: string) {
         <el-menu class="sidebar-nav" :default-active="route.path" router background-color="#171717" text-color="#ececec" active-text-color="#ffffff">
           <el-menu-item index="/ingest"><el-icon><DocumentAdd /></el-icon><span>文档入库</span></el-menu-item>
           <el-menu-item index="/logs"><el-icon><Tickets /></el-icon><span>使用日志</span></el-menu-item>
+          <el-menu-item index="/monitor"><el-icon><DataAnalysis /></el-icon><span>监控大屏</span></el-menu-item>
           <el-menu-item index="/status"><el-icon><Collection /></el-icon><span>系统状态</span></el-menu-item>
           <el-menu-item index="/settings"><el-icon><Setting /></el-icon><span>运行配置</span></el-menu-item>
           <el-menu-item index="/models"><el-icon><Cpu /></el-icon><span>模型管理</span></el-menu-item>

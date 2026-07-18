@@ -1,6 +1,6 @@
 # LLMOps 学习指南
 
-本文档配合 [ARCHITECTURE.md](./ARCHITECTURE.md)，按 Phase 自己动手填业务逻辑。
+本文档配合 [PRD.md](./PRD.md)，按需求优先级自己动手填业务逻辑。
 
 当前仓库是**纯框架**：目录、路由、配置已就绪，业务函数均为 `NotImplementedError` 占位。
 

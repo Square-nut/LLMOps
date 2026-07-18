@@ -175,6 +175,8 @@ export interface LogsResponse {
 }
 
 export type ModelType = 'chat' | 'embedding' | 'vision'
+export type ModelSource = 'official' | 'gateway' | 'local'
+export type LocalDeployment = 'xinference' | 'ollama'
 
 export interface ModelConfigInput {
   model_key: string
@@ -182,7 +184,10 @@ export interface ModelConfigInput {
   model_type: ModelType
   provider: string
   model_name: string
+  source?: ModelSource
+  deployment?: LocalDeployment | null
   endpoint?: string | null
+  credential_ref?: string | null
   dimension?: number | null
   enabled: boolean
   notes: string
@@ -237,6 +242,16 @@ export interface XinferenceLaunchInput {
 export interface XinferenceDeployResponse {
   model: ModelConfig
   runtime: Record<string, unknown>
+}
+
+export interface OllamaCatalogItem {
+  model_name: string
+  model_type: ModelType
+  parameters: Record<string, unknown>
+}
+
+export interface OllamaCatalogResponse {
+  models: OllamaCatalogItem[]
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
@@ -350,6 +365,10 @@ export function getXinferenceRunning(endpoint?: string) {
 export function getXinferenceCached(endpoint?: string) {
   const query = endpoint ? `?endpoint=${encodeURIComponent(endpoint)}` : ''
   return request<XinferenceRuntimeResponse>(`/api/models/runtime/cached${query}`)
+}
+
+export function getOllamaCatalog(endpoint: string) {
+  return request<OllamaCatalogResponse>(`/api/models/runtime/ollama/catalog?endpoint=${encodeURIComponent(endpoint)}`)
 }
 
 export function deployModel(id: string, body: XinferenceLaunchInput) {

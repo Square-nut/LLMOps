@@ -7,6 +7,7 @@ from openai import OpenAI
 from app.core.config import settings
 from app.core.online_api import require_online_api
 from app.core.logger import logger
+from app.services.model_runtime import active_chat_completion_options, active_chat_is_online, active_chat_uses_catalog
 
 _client: Optional[OpenAI] = None
 
@@ -38,6 +39,10 @@ class TaskType(str, Enum):
 
 def select_model(task_type: TaskType = TaskType.SIMPLE, context_length: int = 0) -> str:
     """根据任务类型与上下文长度选择模型。"""
+    # A catalogue selection is deliberately singular: all Chat requests use
+    # the active record instead of hidden task-specific .env routes.
+    if active_chat_uses_catalog():
+        return settings.default_model
     if task_type == TaskType.REASONING:
         return settings.reasoning_model
     if task_type == TaskType.LONG_CONTEXT or context_length > 8000:
@@ -63,6 +68,7 @@ def _create_completion(model: str, messages: list[dict[str, str]]):
         model=model,
         messages=messages,
         stream=False,
+        **active_chat_completion_options(),
     )
 
 
@@ -108,7 +114,8 @@ def completion(
             "latency_ms": 0,
         }
 
-    require_online_api("chat completion")
+    if active_chat_is_online():
+        require_online_api("chat completion")
     context_length = _estimate_context_length(user_message, system_prompt, context)
     selected_model = model or select_model(task_type, context_length=context_length)
     messages = _build_messages(user_message, system_prompt, context)
@@ -117,6 +124,12 @@ def completion(
     try:
         response = _create_completion(selected_model, messages)
     except Exception as exc:
+        # Once a catalogue model is active, do not silently fall back to an
+        # independent .env model. The selected catalogue record is the single
+        # source of truth for Chat routing.
+        if active_chat_uses_catalog():
+            logger.error("Active catalogue chat model failed model=%s: %s", selected_model, exc)
+            raise
         fallback = settings.fallback_model
         if selected_model == fallback:
             logger.error("LLM completion failed model=%s: %s", selected_model, exc)

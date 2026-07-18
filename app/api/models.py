@@ -10,7 +10,7 @@ from psycopg2 import IntegrityError
 from app.core.config import settings
 from app.db import postgres as db
 from app.services import model_runtime
-from app.services import xinference_runtime
+from app.services import ollama_runtime, xinference_runtime
 
 router = APIRouter()
 
@@ -21,22 +21,49 @@ class ModelConfigInput(BaseModel):
     model_type: str = Field(..., pattern=r"^(chat|embedding|vision)$")
     provider: str = Field(..., min_length=1, max_length=80)
     model_name: str = Field(..., min_length=1, max_length=200)
+    source: Optional[str] = Field(default=None, max_length=20)
+    deployment: Optional[str] = Field(default=None, max_length=20)
     endpoint: Optional[str] = Field(default=None, max_length=500)
+    credential_ref: Optional[str] = Field(default=None, max_length=120)
     dimension: Optional[int] = Field(default=None, gt=0)
     enabled: bool = True
     notes: str = Field(default="", max_length=2000)
     runtime_config: dict = Field(default_factory=dict)
 
     def db_values(self) -> dict:
+        provider = self.provider.strip().lower()
+        source = (self.source or _source_from_provider(provider)).strip().lower()
+        deployment = self.deployment.strip().lower() if self.deployment and self.deployment.strip() else None
+        endpoint = self.endpoint.strip() if self.endpoint and self.endpoint.strip() else None
+        if source not in {"official", "gateway", "local"}:
+            raise ValueError("模型来源必须是 official、gateway 或 local")
+        if source == "local":
+            deployment = deployment or (provider if provider in {"xinference", "ollama"} else None)
+            if deployment not in {"xinference", "ollama"}:
+                raise ValueError("本地模型必须选择 Xinference 或 Ollama 部署方式")
+            if not endpoint:
+                raise ValueError("本地模型必须填写服务端点")
+            provider = deployment
+        elif deployment:
+            raise ValueError("只有本地来源可以设置部署方式")
+        elif source == "official":
+            provider = "openai"
+        else:
+            provider = "geekai"
         return {
             **self.model_dump(),
-            "endpoint": self.endpoint.strip() if self.endpoint and self.endpoint.strip() else None,
+            "provider": provider,
+            "source": source,
+            "deployment": deployment,
+            "endpoint": endpoint,
+            "credential_ref": self.credential_ref.strip() if self.credential_ref and self.credential_ref.strip() else None,
             "notes": self.notes.strip(),
             "runtime_config": self.runtime_config,
         }
 
 
 class ModelConfigResponse(ModelConfigInput):
+    source: str
     id: UUID
     is_active: bool
     created_at: datetime
@@ -78,6 +105,18 @@ class XinferenceDeployResponse(BaseModel):
     runtime: dict
 
 
+class OllamaCatalogResponse(BaseModel):
+    models: List[dict]
+
+
+def _source_from_provider(provider: str) -> str:
+    if provider == "openai":
+        return "official"
+    if provider in {"xinference", "ollama", "tei"}:
+        return "local"
+    return "gateway"
+
+
 def _require_database() -> None:
     if not settings.database_enabled:
         raise HTTPException(status_code=503, detail="Database not configured")
@@ -97,8 +136,43 @@ def _runtime_error(exc: Exception) -> HTTPException:
     return _database_error(exc)
 
 
+def _ollama_runtime_error(exc: Exception) -> HTTPException:
+    if isinstance(exc, ollama_runtime.OllamaRuntimeError):
+        return HTTPException(status_code=502, detail=str(exc))
+    return _database_error(exc)
+
+
 def _default_runtime_endpoint() -> str:
     return settings.embedding_api_base or "http://127.0.0.1:9997/v1"
+
+
+def _ollama_model_type(name: str) -> str:
+    embedding_hints = ("embed", "embedding", "nomic", "bge", "mxbai", "snowflake-arctic")
+    return "embedding" if any(hint in name.lower() for hint in embedding_hints) else "chat"
+
+
+@router.get("/models/runtime/ollama/catalog", response_model=OllamaCatalogResponse)
+async def query_ollama_catalog(endpoint: str = Query(..., min_length=8, max_length=500)):
+    try:
+        items = []
+        for model in ollama_runtime.list_models(endpoint):
+            name = str(model.get("name") or model.get("model") or "")
+            if not name:
+                continue
+            items.append(
+                {
+                    "model_name": name,
+                    "model_type": _ollama_model_type(name),
+                    "parameters": {
+                        key: value
+                        for key, value in model.items()
+                        if key in {"digest", "size", "modified_at", "details"}
+                    },
+                }
+            )
+        return OllamaCatalogResponse(models=items)
+    except Exception as exc:
+        raise _ollama_runtime_error(exc) from exc
 
 
 @router.get("/models/runtime/catalog", response_model=XinferenceCatalogResponse)

@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import {
   getRuntimeConfig,
-  getModels,
-  activateModel,
   postEmbeddingCheck,
   postModelCheck,
   postReindex,
@@ -11,8 +10,9 @@ import {
   type ModelCheckResponse,
   type ReindexResponse,
   type RuntimeConfigResponse,
-  type ModelConfig,
 } from '@/api/client'
+
+const router = useRouter()
 
 const config = ref<RuntimeConfigResponse | null>(null)
 const modelCheck = ref<ModelCheckResponse | null>(null)
@@ -24,10 +24,6 @@ const loading = ref(false)
 const modelChecking = ref(false)
 const embeddingChecking = ref(false)
 const reindexing = ref(false)
-const models = ref<ModelConfig[]>([])
-const selectedChatModel = ref('')
-const selectedEmbeddingModel = ref('')
-const switchingModel = ref(false)
 
 function yesNo(value: boolean) {
   return value ? '是' : '否'
@@ -46,35 +42,6 @@ async function loadConfig() {
     error.value = e instanceof Error ? e.message : '配置加载失败'
   } finally {
     loading.value = false
-  }
-}
-
-async function loadModels() {
-  try {
-    models.value = await getModels()
-    selectedChatModel.value = models.value.find((item) => item.model_type === 'chat' && item.is_active)?.id || ''
-    selectedEmbeddingModel.value = models.value.find((item) => item.model_type === 'embedding' && item.is_active)?.id || ''
-  } catch (e) {
-    actionError.value = e instanceof Error ? e.message : '模型目录加载失败'
-  }
-}
-
-async function switchModel(modelId: string, modelType: 'chat' | 'embedding') {
-  if (!modelId) return
-  switchingModel.value = true
-  actionError.value = ''
-  try {
-    const result = await activateModel(modelId)
-    if (modelType === 'embedding') {
-      actionError.value = `${result.message} 请执行重建索引。`
-    } else {
-      actionError.value = result.message
-    }
-    await Promise.all([loadConfig(), loadModels()])
-  } catch (e) {
-    actionError.value = e instanceof Error ? e.message : '模型切换失败'
-  } finally {
-    switchingModel.value = false
   }
 }
 
@@ -119,9 +86,7 @@ async function handleReindex() {
   }
 }
 
-onMounted(async () => {
-  await Promise.all([loadConfig(), loadModels()])
-})
+onMounted(loadConfig)
 </script>
 
 <template>
@@ -130,41 +95,18 @@ onMounted(async () => {
       <button type="button" class="primary-btn" :disabled="loading" @click="loadConfig">
         {{ loading ? '刷新中…' : '刷新配置' }}
       </button>
-      <span class="hint">只读视图：修改 `.env` 后需要重启 API。</span>
+      <span class="hint">只读运行状态；`.env` 仅作为未登记模型时的服务端兜底配置。</span>
     </div>
 
     <p v-if="error" class="error">{{ error }}</p>
 
     <template v-if="config">
       <section class="section model-routing-section">
-        <h2>当前模型切换</h2>
-        <div class="switch-grid">
-          <div class="switch-card">
-            <span class="label">Chat 模型</span>
-            <select v-model="selectedChatModel" :disabled="switchingModel">
-              <option value="">请选择 Chat 模型</option>
-              <option v-for="item in models.filter((model) => model.model_type === 'chat')" :key="item.id" :value="item.id">
-                {{ item.display_name }} · {{ item.model_name }}
-              </option>
-            </select>
-            <button type="button" class="primary-btn" :disabled="switchingModel || !selectedChatModel" @click="switchModel(selectedChatModel, 'chat')">
-              切换 Chat
-            </button>
-          </div>
-          <div class="switch-card">
-            <span class="label">Embedding 模型</span>
-            <select v-model="selectedEmbeddingModel" :disabled="switchingModel">
-              <option value="">请选择 Embedding 模型</option>
-              <option v-for="item in models.filter((model) => model.model_type === 'embedding')" :key="item.id" :value="item.id">
-                {{ item.display_name }} · {{ item.model_name }}
-              </option>
-            </select>
-            <button type="button" class="primary-btn" :disabled="switchingModel || !selectedEmbeddingModel" @click="switchModel(selectedEmbeddingModel, 'embedding')">
-              切换 Embedding
-            </button>
-          </div>
+        <div class="section-heading">
+          <div><h2>模型配置入口</h2><p class="hint">Chat 与 Embedding 的模型、Endpoint、密钥引用及运行参数统一由模型管理维护；设为当前后立即应用于后续请求。</p></div>
+          <el-button type="primary" @click="router.push('/models')">前往模型管理</el-button>
         </div>
-        <p class="hint">Embedding 切换后必须重建 FAISS 索引；Chat 切换立即影响后续新请求。</p>
+        <p class="hint">Embedding 切换后仍需重建 FAISS 索引。此页仅展示环境与运行状态，不再提供第二套模型切换配置。</p>
       </section>
 
       <section class="section">
@@ -188,33 +130,6 @@ onMounted(async () => {
             <span class="label">数据库</span>
             <span class="value" :class="config.database.enabled ? 'ok' : 'warn'">
               {{ config.database.enabled ? '已启用' : '未启用' }}
-            </span>
-          </div>
-        </div>
-      </section>
-
-      <section class="section">
-        <h2>Chat 模型</h2>
-        <div class="cards">
-          <div class="card">
-            <span class="label">Base URL</span>
-            <span class="value mono">{{ config.providers.geekai_base_url }}</span>
-          </div>
-          <div class="card">
-            <span class="label">GeekAI Key</span>
-            <span class="value" :class="config.providers.geekai_api_key.configured ? 'ok' : 'warn'">
-              {{ secretLabel(config.providers.geekai_api_key) }}
-            </span>
-          </div>
-          <div class="card">
-            <span class="label">默认模型</span>
-            <span class="value mono">{{ config.routing.default_model }}</span>
-          </div>
-          <div class="card">
-            <span class="label">推理 / 长上下文 / 兜底</span>
-            <span class="value mono">
-              {{ config.routing.reasoning_model }} / {{ config.routing.long_context_model }} /
-              {{ config.routing.fallback_model }}
             </span>
           </div>
         </div>

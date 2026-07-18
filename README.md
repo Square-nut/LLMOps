@@ -2,7 +2,8 @@
 
 Minimal LLM + RAG application (FastAPI backend + Vue frontend).
 
-- 架构说明：[ARCHITECTURE.md](./ARCHITECTURE.md)
+- 开发与验收依据：[PRD.md](./PRD.md)
+- 页面生成规范：[UI_GENERATION_RULES.md](./UI_GENERATION_RULES.md)
 - 学习指南：[LEARNING.md](./LEARNING.md)
 
 ## 快速启动（本地开发）

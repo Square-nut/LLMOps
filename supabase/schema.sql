@@ -39,7 +39,10 @@ create table if not exists model_configs (
     model_type text not null check (model_type in ('chat', 'embedding', 'vision')),
     provider text not null,
     model_name text not null,
+    source text not null default 'gateway',
+    deployment text,
     endpoint text,
+    credential_ref text,
     dimension integer check (dimension is null or dimension > 0),
     enabled boolean not null default true,
     is_active boolean not null default false,
@@ -61,3 +64,20 @@ alter table llm_logs add column if not exists prompt_tokens integer default 0;
 alter table llm_logs add column if not exists completion_tokens integer default 0;
 alter table model_configs add column if not exists is_active boolean not null default false;
 alter table model_configs add column if not exists runtime_config jsonb not null default '{}'::jsonb;
+alter table model_configs add column if not exists source text not null default 'gateway';
+alter table model_configs add column if not exists deployment text;
+alter table model_configs add column if not exists credential_ref text;
+update model_configs
+set source = case
+    when provider = 'openai' then 'official'
+    when provider in ('xinference', 'ollama', 'tei') then 'local'
+    else 'gateway'
+end
+where source is null or source = 'gateway';
+update model_configs
+set deployment = case
+    when provider = 'xinference' then 'xinference'
+    when provider = 'ollama' then 'ollama'
+    else deployment
+end
+where deployment is null;
