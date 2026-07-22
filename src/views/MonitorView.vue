@@ -1,15 +1,20 @@
 <script setup lang="ts">
+import { ElMessageBox } from 'element-plus'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
-import { getHealth, getLogs, getModels, getRagStatus, type HealthResponse, type LogsResponse, type ModelConfig, type RagStatusResponse } from '@/api/client'
+import { useRoute, useRouter } from 'vue-router'
+import { getHealth, getLogs, getModels, getRagStatus, postReindex, type HealthResponse, type LogsResponse, type ModelConfig, type RagStatusResponse } from '@/api/client'
 
 const router = useRouter()
+const route = useRoute()
 const health = ref<HealthResponse | null>(null)
 const logs = ref<LogsResponse | null>(null)
 const rag = ref<RagStatusResponse | null>(null)
 const models = ref<ModelConfig[]>([])
 const loading = ref(false)
+const activeTab = ref<'overview' | 'maintenance'>(route.query.tab === 'maintenance' ? 'maintenance' : 'overview')
 const autoRefresh = ref(true)
+const reindexing = ref(false)
+const maintenanceMessage = ref('')
 const lastRefreshedAt = ref<Date | null>(null)
 const errors = ref<string[]>([])
 let refreshTimer: ReturnType<typeof setInterval> | undefined
@@ -100,12 +105,42 @@ function openLogs() {
   router.push('/logs')
 }
 
+function openModels() {
+  router.push('/models')
+}
+
+async function handleReindex() {
+  try {
+    await ElMessageBox.confirm('将使用当前 Embedding 模型重新构建 FAISS 索引，期间检索结果可能更新。', '确认重建索引', {
+      confirmButtonText: '开始重建',
+      cancelButtonText: '取消',
+      type: 'warning',
+    })
+  } catch {
+    return
+  }
+  reindexing.value = true
+  maintenanceMessage.value = ''
+  try {
+    const result = await postReindex()
+    maintenanceMessage.value = `重建完成：${result.documents_processed} 篇文档，${result.chunks_indexed} 个分块，${result.vector_count} 个向量。`
+    await loadDashboard()
+  } catch (error) {
+    maintenanceMessage.value = error instanceof Error ? error.message : '索引重建失败'
+  } finally {
+    reindexing.value = false
+  }
+}
+
 function resetTimer() {
   if (refreshTimer) clearInterval(refreshTimer)
   if (autoRefresh.value) refreshTimer = setInterval(loadDashboard, 30_000)
 }
 
 watch(autoRefresh, resetTimer)
+watch(() => route.query.tab, (tab) => {
+  activeTab.value = tab === 'maintenance' ? 'maintenance' : 'overview'
+})
 onMounted(() => {
   loadDashboard()
   resetTimer()
@@ -124,6 +159,10 @@ onUnmounted(() => {
       </div>
       <div class="toolbar-actions">
         <span class="refresh-time">最近刷新：{{ formatTime(lastRefreshedAt) }}</span>
+        <el-radio-group v-model="activeTab" size="small">
+          <el-radio-button value="overview">总览</el-radio-button>
+          <el-radio-button value="maintenance">系统维护</el-radio-button>
+        </el-radio-group>
         <el-switch v-model="autoRefresh" inline-prompt active-text="自动" inactive-text="手动" />
         <el-button :loading="loading" @click="loadDashboard">刷新</el-button>
       </div>
@@ -139,6 +178,7 @@ onUnmounted(() => {
       :closable="false"
     />
 
+    <template v-if="activeTab === 'overview'">
     <section class="hero-grid">
       <article class="health-card" :class="healthState.tone">
         <span class="eyebrow">整体健康度</span>
@@ -223,6 +263,42 @@ onUnmounted(() => {
       </div>
       <div v-else class="alert-empty"><span class="empty-mark">✓</span><span>当前没有由已接入数据源产生的告警</span><el-button text type="primary" @click="openLogs">查看使用日志</el-button></div>
     </section>
+    </template>
+
+    <section v-else class="maintenance-view">
+      <div class="maintenance-head">
+        <div>
+          <span class="eyebrow">SYSTEM MAINTENANCE</span>
+          <h3>服务连通性与索引恢复</h3>
+          <p>用于定位当前依赖问题并执行索引恢复，不展示请求趋势或资源指标。</p>
+        </div>
+        <el-tag :type="healthState.tone === 'success' ? 'success' : healthState.tone === 'danger' ? 'danger' : 'warning'" effect="light">
+          {{ healthState.label }}
+        </el-tag>
+      </div>
+
+      <div class="maintenance-list">
+        <div class="maintenance-row"><strong>FastAPI</strong><span :class="health ? 'success-text' : 'warning-text'">{{ health ? '可连接' : '未采集' }}</span><span class="muted-text">健康接口与后端服务</span></div>
+        <div class="maintenance-row"><strong>PostgreSQL</strong><span :class="health?.database ? 'success-text' : 'warning-text'">{{ statusText(health?.database, '已连接', '不可连接') }}</span><span class="muted-text">文档 {{ formatNumber(rag?.database.document_count) }} · Chunk {{ formatNumber(rag?.database.chunk_count) }}</span></div>
+        <div class="maintenance-row"><strong>FAISS 索引</strong><span :class="rag?.status === 'ok' ? 'success-text' : 'warning-text'">{{ rag?.status === 'ok' ? '一致' : rag ? '需要处理' : '未采集' }}</span><span class="muted-text">{{ formatNumber(rag?.index.vector_count) }} 向量 · {{ rag?.index.stored_dim || '—' }} 维</span></div>
+        <div class="maintenance-row"><strong>Xinference / Embedding</strong><span :class="rag?.embedding.ready ? 'success-text' : 'warning-text'">{{ statusText(rag?.embedding.ready, '已就绪', '不可用') }}</span><span class="muted-text">{{ rag?.embedding.model || '—' }} · {{ rag?.embedding.dim || '—' }} 维</span><el-button text type="primary" @click="openModels">前往模型管理</el-button></div>
+      </div>
+
+      <div class="index-recovery">
+        <div>
+          <span class="eyebrow">INDEX RECOVERY</span>
+          <h3>索引一致性与恢复</h3>
+        </div>
+        <div class="index-details">
+          <div><span>当前 Embedding</span><strong>{{ rag?.embedding.model || '—' }}</strong><small>{{ rag?.embedding.dim || '—' }} 维</small></div>
+          <div><span>索引 Embedding</span><strong>{{ rag?.index.stored_embedding_model || '—' }}</strong><small>{{ rag?.index.stored_dim || '—' }} 维</small></div>
+          <div><span>最近重建</span><strong>{{ rag?.index.updated_at ? new Date(rag.index.updated_at).toLocaleString('zh-CN') : '—' }}</strong><small>{{ formatNumber(rag?.index.vector_count) }} 向量</small></div>
+        </div>
+        <el-alert v-if="rag?.warnings.length" :title="rag.warnings[0]" type="warning" show-icon :closable="false" />
+        <el-alert v-if="maintenanceMessage" :title="maintenanceMessage" :type="maintenanceMessage.startsWith('重建完成') ? 'success' : 'error'" show-icon :closable="false" />
+        <div class="recovery-actions"><el-button type="primary" :loading="reindexing" :disabled="!rag?.database.enabled" @click="handleReindex">重建索引</el-button><span class="muted-text">仅在索引缺失或模型/维度不一致时使用。</span></div>
+      </div>
+    </section>
   </main>
 </template>
 
@@ -244,5 +320,7 @@ h2, h3 { margin: 0; color: #1d2939; } h2 { font-size: 22px; } h3 { font-size: 16
 .status-list { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0 20px; }.status-row { display: flex; justify-content: space-between; padding: 13px 0; border-bottom: 1px solid #f0f2f5; color: #475467; font-size: 13px; }.status-row b { color: #344054; font-weight: 600; }.success-text { color: #079455 !important; }.warning-text { color: #b54708 !important; }.muted-text { color: #98a2b3 !important; }
 .token-summary { grid-template-columns: repeat(3, 1fr); margin-top: 24px; }.token-summary div { display: flex; flex-direction: column; gap: 7px; padding: 12px; background: #f8faff; border-radius: 8px; }.token-summary strong { font-size: 19px; }.muted-copy { margin-top: 19px; color: #98a2b3; font-size: 12px; }.knowledge-grid { grid-template-columns: repeat(2, 1fr); margin-top: 22px; gap: 22px; }.knowledge-grid strong { font-size: 21px; }.knowledge-grid .small-value { font-size: 12px; line-height: 1.5; }
 .alerts-card { margin-top: 14px; padding: 18px; }.alert-count { color: #b54708; font-size: 12px; }.alert-list { display: flex; flex-direction: column; }.alert-row, .alert-empty { display: flex; align-items: center; gap: 12px; padding-top: 14px; color: #475467; font-size: 13px; }.alert-detail { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 3px; }.alert-detail strong { color: #344054; font-size: 13px; }.alert-detail span { overflow: hidden; color: #667085; text-overflow: ellipsis; white-space: nowrap; }.alert-meta { flex-shrink: 0; color: #98a2b3; font-size: 12px; }.alert-empty { color: #667085; }.empty-mark { display: inline-grid; width: 21px; height: 21px; place-items: center; border-radius: 99px; background: #ecfdf3; color: #079455; font-weight: 700; }
+.maintenance-view { margin-top: 20px; border: 1px solid #e6e9ef; border-radius: 12px; background: #fff; padding: 22px; }.maintenance-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }.maintenance-head p { margin: 8px 0 0; color: #667085; font-size: 13px; }.maintenance-list { margin-top: 20px; border-top: 1px solid #eef1f5; }.maintenance-row { display: grid; grid-template-columns: minmax(140px, .8fr) minmax(105px, .7fr) minmax(180px, 1.5fr) auto; align-items: center; gap: 16px; padding: 14px 0; border-bottom: 1px solid #eef1f5; color: #475467; font-size: 13px; }.maintenance-row strong { color: #344054; }.index-recovery { margin-top: 24px; padding-top: 20px; border-top: 1px solid #eef1f5; }.index-details { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin: 16px 0; }.index-details div { display: flex; flex-direction: column; gap: 5px; padding: 13px; border: 1px solid #eef1f5; border-radius: 8px; }.index-details span, .index-details small { color: #7c8797; font-size: 12px; }.index-details strong { color: #344054; font-size: 13px; overflow-wrap: anywhere; }.index-recovery :deep(.el-alert) { margin: 10px 0; }.recovery-actions { display: flex; align-items: center; gap: 12px; margin-top: 14px; }
 @media (max-width: 1320px) { .hero-grid { grid-template-columns: minmax(280px, 1.4fr) repeat(2, 1fr); }.dashboard-grid { grid-template-columns: 1fr; } }
+@media (max-width: 760px) { .maintenance-row { grid-template-columns: 1fr; gap: 6px; }.index-details { grid-template-columns: 1fr; }.maintenance-head, .recovery-actions { align-items: flex-start; flex-direction: column; } }
 </style>

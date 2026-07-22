@@ -78,7 +78,7 @@ function onKeydown(e: KeyboardEvent) {
     <div ref="listRef" class="messages-area">
       <div v-if="messages.length === 0" class="welcome">
         <h2>有什么可以帮忙的？</h2>
-        <p>基于 RAG 的知识库问答。在侧栏可切换文档入库与系统状态。</p>
+        <p>基于 RAG 的知识库问答。在侧栏可切换文档入库、监控大屏与模型管理。</p>
       </div>
 
       <article

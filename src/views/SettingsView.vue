@@ -1,29 +1,13 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import {
-  getRuntimeConfig,
-  postEmbeddingCheck,
-  postModelCheck,
-  postReindex,
-  type EmbeddingCheckResponse,
-  type ModelCheckResponse,
-  type ReindexResponse,
-  type RuntimeConfigResponse,
-} from '@/api/client'
+import { getRuntimeConfig, type RuntimeConfigResponse } from '@/api/client'
 
 const router = useRouter()
-
 const config = ref<RuntimeConfigResponse | null>(null)
-const modelCheck = ref<ModelCheckResponse | null>(null)
-const embeddingCheck = ref<EmbeddingCheckResponse | null>(null)
-const reindexResult = ref<ReindexResponse | null>(null)
 const error = ref('')
-const actionError = ref('')
 const loading = ref(false)
-const modelChecking = ref(false)
-const embeddingChecking = ref(false)
-const reindexing = ref(false)
+const showDetails = ref(false)
 
 function yesNo(value: boolean) {
   return value ? '是' : '否'
@@ -45,304 +29,87 @@ async function loadConfig() {
   }
 }
 
-async function handleModelCheck() {
-  modelChecking.value = true
-  modelCheck.value = null
-  actionError.value = ''
-  try {
-    modelCheck.value = await postModelCheck()
-  } catch (e) {
-    actionError.value = e instanceof Error ? e.message : '模型检查失败'
-  } finally {
-    modelChecking.value = false
-  }
-}
-
-async function handleEmbeddingCheck() {
-  embeddingChecking.value = true
-  embeddingCheck.value = null
-  actionError.value = ''
-  try {
-    embeddingCheck.value = await postEmbeddingCheck()
-  } catch (e) {
-    actionError.value = e instanceof Error ? e.message : 'Embedding 检查失败'
-  } finally {
-    embeddingChecking.value = false
-  }
-}
-
-async function handleReindex() {
-  if (!confirm('将清空 FAISS 索引，并按数据库中的文档重新 embedding。继续吗？')) return
-
-  reindexing.value = true
-  reindexResult.value = null
-  actionError.value = ''
-  try {
-    reindexResult.value = await postReindex()
-  } catch (e) {
-    actionError.value = e instanceof Error ? e.message : '重建索引失败'
-  } finally {
-    reindexing.value = false
-  }
-}
-
 onMounted(loadConfig)
 </script>
 
 <template>
-  <div class="settings-page">
-    <div class="toolbar">
-      <button type="button" class="primary-btn" :disabled="loading" @click="loadConfig">
-        {{ loading ? '刷新中…' : '刷新配置' }}
-      </button>
-      <span class="hint">只读运行状态；`.env` 仅作为未登记模型时的服务端兜底配置。</span>
+  <main class="settings-page">
+    <div class="page-toolbar">
+      <div>
+        <p class="eyebrow">RUNTIME CONFIGURATION</p>
+        <h2>运行配置</h2>
+        <p>当前生效的非敏感应用参数。</p>
+      </div>
+      <div class="toolbar-actions">
+        <el-button @click="showDetails = !showDetails">{{ showDetails ? '收起参数' : '展开全部参数' }}</el-button>
+        <el-button :loading="loading" @click="loadConfig">刷新配置</el-button>
+      </div>
     </div>
 
-    <p v-if="error" class="error">{{ error }}</p>
+    <el-alert v-if="error" :title="error" type="error" show-icon :closable="false" />
 
     <template v-if="config">
-      <section class="section model-routing-section">
-        <div class="section-heading">
-          <div><h2>模型配置入口</h2><p class="hint">Chat 与 Embedding 的模型、Endpoint、密钥引用及运行参数统一由模型管理维护；设为当前后立即应用于后续请求。</p></div>
-          <el-button type="primary" @click="router.push('/models')">前往模型管理</el-button>
-        </div>
-        <p class="hint">Embedding 切换后仍需重建 FAISS 索引。此页仅展示环境与运行状态，不再提供第二套模型切换配置。</p>
+      <section class="model-strip">
+        <div class="model-summary"><span>当前 Chat</span><strong>{{ config.routing.default_model || '未配置' }}</strong><small>已由模型管理激活</small></div>
+        <div class="model-summary"><span>当前 Embedding</span><strong>{{ config.embedding.model }}</strong><small>{{ config.embedding.provider }} · {{ config.embedding.dim }} 维</small></div>
+        <div class="model-actions"><el-button type="primary" @click="router.push('/models')">模型管理</el-button><el-button @click="router.push('/monitor?tab=maintenance')">系统维护</el-button></div>
       </section>
 
-      <section class="section">
-        <h2>应用</h2>
-        <div class="cards">
-          <div class="card">
-            <span class="label">环境</span>
-            <span class="value">{{ config.app.app_env }}</span>
-          </div>
-          <div class="card">
-            <span class="label">日志级别</span>
-            <span class="value">{{ config.app.log_level }}</span>
-          </div>
-          <div class="card">
-            <span class="label">在线 API</span>
-            <span class="value" :class="config.app.allow_online_api ? 'ok' : 'warn'">
-              {{ yesNo(config.app.allow_online_api) }}
-            </span>
-          </div>
-          <div class="card">
-            <span class="label">数据库</span>
-            <span class="value" :class="config.database.enabled ? 'ok' : 'warn'">
-              {{ config.database.enabled ? '已启用' : '未启用' }}
-            </span>
-          </div>
-        </div>
+      <section class="config-grid">
+        <el-card shadow="never" class="config-card">
+          <template #header><div class="card-title"><div><span class="eyebrow">APPLICATION</span><h3>应用与连接</h3></div><span class="read-only">只读</span></div></template>
+          <el-descriptions :column="1" size="small">
+            <el-descriptions-item label="运行环境">{{ config.app.app_env }}</el-descriptions-item>
+            <el-descriptions-item label="日志级别">{{ config.app.log_level }}</el-descriptions-item>
+            <el-descriptions-item label="在线 API">{{ yesNo(config.app.allow_online_api) }}</el-descriptions-item>
+            <el-descriptions-item label="数据库">{{ config.database.enabled ? '已启用' : '未启用' }}</el-descriptions-item>
+            <el-descriptions-item v-if="showDetails" label="数据库连接串"><el-tag :type="config.database.database_url.configured ? 'success' : 'info'">{{ secretLabel(config.database.database_url) }}</el-tag></el-descriptions-item>
+          </el-descriptions>
+        </el-card>
+
+        <el-card shadow="never" class="config-card">
+          <template #header><div class="card-title"><div><span class="eyebrow">RAG BEHAVIOR</span><h3>RAG 行为</h3></div><span class="read-only">只读</span></div></template>
+          <el-descriptions :column="1" size="small">
+            <el-descriptions-item label="Chunk size">{{ config.rag.chunk_size }}</el-descriptions-item>
+            <el-descriptions-item label="Chunk overlap">{{ config.rag.chunk_overlap }}</el-descriptions-item>
+            <el-descriptions-item label="检索 Top-K">{{ config.rag.retrieval_top_k }}</el-descriptions-item>
+            <el-descriptions-item label="Mock RAG / Chat">{{ yesNo(config.mock.rag_enabled) }} / {{ yesNo(config.mock.chat_enabled) }}</el-descriptions-item>
+            <el-descriptions-item v-if="showDetails" label="FAISS 索引路径"><span class="mono">{{ config.rag.faiss_index_path }}</span></el-descriptions-item>
+          </el-descriptions>
+        </el-card>
+
+        <el-card shadow="never" class="config-card">
+          <template #header><div class="card-title"><div><span class="eyebrow">EFFECTIVE VALUES</span><h3>当前生效摘要</h3></div><span class="read-only">来自运行环境</span></div></template>
+          <el-descriptions :column="1" size="small">
+            <el-descriptions-item label="Embedding">{{ config.embedding.provider }} / {{ config.embedding.backend }}</el-descriptions-item>
+            <el-descriptions-item label="Endpoint"><span class="mono">{{ config.embedding.api_base || '—' }}</span></el-descriptions-item>
+            <el-descriptions-item label="默认路由">{{ config.routing.default_model || '—' }}</el-descriptions-item>
+            <el-descriptions-item label="模型密钥">由模型管理的密钥引用控制</el-descriptions-item>
+            <el-descriptions-item v-if="showDetails" label="Embedding Key"><el-tag :type="config.embedding.api_key.configured ? 'success' : 'info'">{{ secretLabel(config.embedding.api_key) }}</el-tag></el-descriptions-item>
+          </el-descriptions>
+        </el-card>
       </section>
 
-      <section class="section">
-        <h2>Embedding</h2>
-        <div class="cards">
-          <div class="card">
-            <span class="label">Provider / Backend</span>
-            <span class="value">{{ config.embedding.provider }} / {{ config.embedding.backend }}</span>
-          </div>
-          <div class="card">
-            <span class="label">模型</span>
-            <span class="value mono">{{ config.embedding.model }}</span>
-          </div>
-          <div class="card">
-            <span class="label">版本 / 维度</span>
-            <span class="value mono">{{ config.embedding.version }} / {{ config.embedding.dim }}</span>
-          </div>
-          <div class="card">
-            <span class="label">设备</span>
-            <span class="value">{{ config.embedding.device }}</span>
-          </div>
-          <div class="card">
-            <span class="label">Embedding 服务</span>
-            <span class="value mono">{{ config.embedding.api_base || '-' }}</span>
-          </div>
-          <div class="card">
-            <span class="label">Embedding Key</span>
-            <span class="value" :class="config.embedding.api_key.configured ? 'ok' : 'muted'">
-              {{ secretLabel(config.embedding.api_key) }}
-            </span>
-          </div>
+      <section class="boundary-section">
+        <div class="boundary-head"><div><span class="eyebrow">CONFIGURATION BOUNDARY</span><h3>配置边界</h3></div><span class="read-only">避免重复操作</span></div>
+        <div class="boundary-grid">
+          <div><strong>模型管理</strong><span>登记、编辑、启停、健康检查，以及 Chat / Embedding 切换。</span></div>
+          <div><strong>监控大屏 · 系统维护</strong><span>服务连通性、索引一致性和重建索引。</span></div>
+          <div><strong>运行配置</strong><span>RAG 参数、应用行为和当前生效的配置摘要。</span></div>
         </div>
       </section>
 
-      <section class="section">
-        <h2>RAG</h2>
-        <div class="cards">
-          <div class="card">
-            <span class="label">FAISS 路径</span>
-            <span class="value mono">{{ config.rag.faiss_index_path }}</span>
-          </div>
-          <div class="card">
-            <span class="label">Chunk size / overlap</span>
-            <span class="value">{{ config.rag.chunk_size }} / {{ config.rag.chunk_overlap }}</span>
-          </div>
-          <div class="card">
-            <span class="label">Top K</span>
-            <span class="value">{{ config.rag.retrieval_top_k }}</span>
-          </div>
-          <div class="card">
-            <span class="label">Mock RAG / Chat</span>
-            <span class="value">{{ yesNo(config.mock.rag_enabled) }} / {{ yesNo(config.mock.chat_enabled) }}</span>
-          </div>
-        </div>
-      </section>
+      <el-alert title="切换 Embedding 模型后，请前往“监控大屏 > 系统维护”确认索引一致性，并在需要时重建索引。" type="warning" show-icon :closable="false" />
 
-      <section class="section">
-        <h2>操作</h2>
-        <div class="actions">
-          <button type="button" class="primary-btn" :disabled="modelChecking" @click="handleModelCheck">
-            {{ modelChecking ? '检查中…' : '检查 Chat 模型' }}
-          </button>
-          <button
-            type="button"
-            class="primary-btn"
-            :disabled="embeddingChecking"
-            @click="handleEmbeddingCheck"
-          >
-            {{ embeddingChecking ? '检查中…' : '检查 Embedding' }}
-          </button>
-          <button type="button" class="danger-btn" :disabled="reindexing" @click="handleReindex">
-            {{ reindexing ? '重建中…' : '重建索引' }}
-          </button>
-        </div>
-
-        <p v-if="actionError" class="error">{{ actionError }}</p>
-        <p v-if="modelCheck" class="success">
-          Chat OK：{{ modelCheck.model }} · {{ modelCheck.latency_ms }}ms · {{ modelCheck.reply }}
-        </p>
-        <p v-if="embeddingCheck" class="success">
-          Embedding OK：{{ embeddingCheck.backend }} · {{ embeddingCheck.model }} · dim {{ embeddingCheck.dim }}
-        </p>
-        <p v-if="reindexResult" class="success">
-          重建完成：{{ reindexResult.documents_processed }} 篇文档，{{ reindexResult.chunks_indexed }} 个分块，
-          {{ reindexResult.vector_count }} 条向量。
-        </p>
-      </section>
-
-      <section class="section">
-        <h2>说明</h2>
-        <ul class="notes">
-          <li v-for="note in config.notes" :key="note">{{ note }}</li>
-        </ul>
-      </section>
+      <section v-if="config.notes.length" class="notes-section"><h3>运行说明</h3><ul><li v-for="note in config.notes" :key="note">{{ note }}</li></ul></section>
     </template>
-  </div>
+  </main>
 </template>
 
 <style scoped>
-.settings-page {
-  flex: 1;
-  overflow-y: auto;
-  padding: 1.5rem 2rem 2rem;
-  max-width: 58rem;
-}
-
-.toolbar,
-.actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.75rem;
-}
-.switch-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
-.switch-card { display: flex; flex-direction: column; gap: .65rem; padding: 1rem; border: 1px solid var(--border); border-radius: .65rem; background: var(--assistant-bg); }
-.switch-card select { width: 100%; padding: .55rem .65rem; border: 1px solid var(--input-border); border-radius: .45rem; background: var(--input-bg); color: var(--main-text); }
-.model-routing-section .hint { margin-bottom: 0; }
-
-.section {
-  margin-top: 1.5rem;
-}
-
-.section h2 {
-  font-size: 0.9375rem;
-  font-weight: 600;
-  margin: 0 0 0.75rem;
-}
-
-.cards {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.card {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 1rem;
-  padding: 1rem 1.25rem;
-  border-radius: 0.75rem;
-  background: var(--assistant-bg);
-  border: 1px solid var(--border);
-}
-
-.label,
-.hint,
-.notes {
-  font-size: 0.8125rem;
-  color: #6e6e80;
-}
-
-.value {
-  font-size: 0.875rem;
-  font-weight: 500;
-  text-align: right;
-  word-break: break-all;
-}
-
-.mono {
-  font-family: ui-monospace, monospace;
-}
-
-.primary-btn,
-.danger-btn {
-  padding: 0.5rem 1rem;
-  border-radius: 0.5rem;
-  border: 1px solid var(--border);
-  background: var(--main-bg);
-  font-size: 0.875rem;
-  cursor: pointer;
-}
-
-.primary-btn {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.danger-btn {
-  border-color: #e67e22;
-  color: #e67e22;
-}
-
-.primary-btn:hover:not(:disabled),
-.danger-btn:hover:not(:disabled) {
-  background: var(--assistant-bg);
-}
-
-.primary-btn:disabled,
-.danger-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.ok,
-.success {
-  color: var(--accent);
-}
-
-.warn,
-.error {
-  color: #e67e22;
-}
-
-.muted {
-  color: #8e8e8e;
-}
-
-.notes {
-  margin: 0;
-  padding-left: 1.25rem;
-}
+.settings-page { flex: 1; overflow-y: auto; padding: 24px 28px 36px; background: #f7f8fa; color: #18202b; }.page-toolbar, .toolbar-actions, .card-title, .model-actions, .boundary-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }.page-toolbar { margin-bottom: 20px; }.page-toolbar p { margin: 7px 0 0; color: #667085; font-size: 13px; }.toolbar-actions, .model-actions { flex-wrap: wrap; justify-content: flex-end; }.eyebrow { margin: 0 0 5px; color: #7c8797; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; } h2, h3 { margin: 0; color: #1d2939; } h2 { font-size: 22px; } h3 { font-size: 16px; }
+.model-strip { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 16px; align-items: center; padding: 16px 0; border-top: 1px solid #e6e9ef; border-bottom: 1px solid #e6e9ef; }.model-summary { display: flex; min-width: 0; flex-direction: column; gap: 4px; }.model-summary span, .model-summary small, .read-only { color: #7c8797; font-size: 12px; }.model-summary strong { color: #344054; overflow-wrap: anywhere; font-size: 14px; }
+.config-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-top: 18px; }.config-card { min-width: 0; }.card-title { align-items: flex-start; }.config-card :deep(.el-card__header) { padding: 15px 16px; }.config-card :deep(.el-card__body) { padding: 12px 16px; }.config-card :deep(.el-descriptions__label) { color: #667085; width: 104px; }.config-card :deep(.el-descriptions__content) { color: #344054; overflow-wrap: anywhere; }.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
+.boundary-section, .notes-section { margin-top: 18px; border: 1px solid #e6e9ef; border-radius: 12px; background: #fff; padding: 18px; }.boundary-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-top: 14px; }.boundary-grid div { display: flex; flex-direction: column; gap: 6px; padding-right: 16px; border-right: 1px solid #eef1f5; }.boundary-grid div:last-child { border-right: 0; padding-right: 0; }.boundary-grid strong { color: #344054; font-size: 14px; }.boundary-grid span { color: #667085; font-size: 13px; line-height: 1.5; }.settings-page :deep(.el-alert) { margin-top: 18px; }.notes-section ul { margin: 12px 0 0; padding-left: 20px; color: #667085; font-size: 13px; }.notes-section li + li { margin-top: 6px; }
+@media (max-width: 980px) { .config-grid, .boundary-grid { grid-template-columns: 1fr; }.boundary-grid div { border-right: 0; border-bottom: 1px solid #eef1f5; padding: 0 0 12px; }.boundary-grid div:last-child { border-bottom: 0; padding-bottom: 0; } } @media (max-width: 700px) { .page-toolbar, .model-strip, .boundary-head { align-items: flex-start; grid-template-columns: 1fr; flex-direction: column; }.model-actions { justify-content: flex-start; } }
 </style>
